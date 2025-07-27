@@ -189,24 +189,13 @@ class AdminApiService {
 
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ===
 
-  /// Получить список всех пользователей
+  /// Получить список всех пользователей (для админа)
   Future<Map<String, dynamic>> getUsers({
     int page = 1,
     int limit = 20,
     String? search,
   }) async {
-    final queryParams = <String, String>{
-      'page': page.toString(),
-      'limit': limit.toString(),
-      if (search != null && search.isNotEmpty) 'search': search,
-    };
-
-    return await _makeRequest('GET', '/users', queryParams: queryParams);
-  }
-
-  /// Получить пользователя по ID
-  Future<Map<String, dynamic>> getUser(String userId) async {
-    return await _makeRequest('GET', '/users/$userId');
+    return await _makeRequest('GET', '/auth/admin-users');
   }
 
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ЗАКАЗАМИ ===

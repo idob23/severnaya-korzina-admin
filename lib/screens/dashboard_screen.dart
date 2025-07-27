@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/admin_api_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -386,20 +387,157 @@ class _SystemStatusRow extends StatelessWidget {
   }
 }
 
-/// Заглушки для остальных экранов (будем реализовывать по частям)
-class _UsersManagementScreen extends StatelessWidget {
+/// Управление пользователями - РЕАЛЬНЫЙ ФУНКЦИОНАЛ
+class _UsersManagementScreen extends StatefulWidget {
+  @override
+  _UsersManagementScreenState createState() => _UsersManagementScreenState();
+}
+
+class _UsersManagementScreenState extends State<_UsersManagementScreen> {
+  final AdminApiService _apiService = AdminApiService();
+  List<dynamic> _users = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsers();
+  }
+
+  Future<void> _loadUsers() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final response = await _apiService.getUsers();
+      setState(() {
+        _users = response['users'] ?? [];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Ошибка загрузки: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        children: [
+          // Заголовок
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.people, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'Управление пользователями',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                Spacer(),
+                IconButton(
+                  icon: Icon(Icons.refresh),
+                  onPressed: _loadUsers,
+                  tooltip: 'Обновить',
+                ),
+              ],
+            ),
+          ),
+
+          // Контент
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _buildErrorWidget()
+                    : _buildUsersList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.people, size: 64, color: Colors.grey),
+          Icon(Icons.error, size: 64, color: Colors.red),
           SizedBox(height: 16),
-          Text('Управление пользователями'),
-          Text('Будет реализовано в следующей версии'),
+          Text(_error!),
+          SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadUsers,
+            child: Text('Повторить'),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildUsersList() {
+    if (_users.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.people_outline, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text('Пользователи не найдены'),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.all(16),
+      itemCount: _users.length,
+      itemBuilder: (context, index) {
+        final user = _users[index];
+        return Card(
+          margin: EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.blue[100],
+              child: Text(
+                (user['firstName']?[0] ?? '?').toString().toUpperCase(),
+                style: TextStyle(color: Colors.blue[800]),
+              ),
+            ),
+            title: Text(user['firstName'] ?? 'Без имени'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Телефон: ${user['phone'] ?? 'Не указан'}'),
+                if (user['email'] != null) Text('Email: ${user['email']}'),
+              ],
+            ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  user['isActive'] == true ? Icons.check_circle : Icons.cancel,
+                  color: user['isActive'] == true ? Colors.green : Colors.red,
+                ),
+                Text(
+                  user['isActive'] == true ? 'Активен' : 'Заблокирован',
+                  style: TextStyle(fontSize: 10),
+                ),
+              ],
+            ),
+            isThreeLine: true,
+          ),
+        );
+      },
     );
   }
 }
