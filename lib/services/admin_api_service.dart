@@ -136,7 +136,7 @@ class AdminApiService {
   /// Простой вход по логину и паролю для админа
   Future<Map<String, dynamic>> loginWithPassword(
       String login, String password) async {
-    return await _makeRequest('POST', '/admin-auth/login', body: {
+    return await _makeRequest('POST', '/auth/admin-login', body: {
       'login': login,
       'password': password,
     });
@@ -144,12 +144,12 @@ class AdminApiService {
 
   /// Получить профиль администратора
   Future<Map<String, dynamic>> getAdminProfile() async {
-    return await _makeRequest('GET', '/admin-auth/profile');
+    return await _makeRequest('GET', '/auth/admin-profile');
   }
 
   /// Проверить токен администратора
   Future<Map<String, dynamic>> checkAdminToken() async {
-    return await _makeRequest('GET', '/admin-auth/check');
+    return await _makeRequest('GET', '/auth/admin-check');
   }
 
   /// Вход по номеру телефона (SMS код) - оставляем для будущего
