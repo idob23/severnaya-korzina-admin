@@ -130,8 +130,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-/// Главная страница dashboard
-class _DashboardHomeScreen extends StatelessWidget {
+/// Главная страница dashboard - С РЕАЛЬНОЙ СТАТИСТИКОЙ
+class _DashboardHomeScreen extends StatefulWidget {
+  @override
+  _DashboardHomeScreenState createState() => _DashboardHomeScreenState();
+}
+
+class _DashboardHomeScreenState extends State<_DashboardHomeScreen> {
+  final AdminApiService _apiService = AdminApiService();
+  Map<String, dynamic>? _stats;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await _apiService.getDashboardStats();
+      setState(() {
+        _stats = response['stats'];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      print('Ошибка загрузки статистики: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -139,12 +173,22 @@ class _DashboardHomeScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Заголовок
-          Text(
-            'Панель управления',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+          // Заголовок с кнопкой обновления
+          Row(
+            children: [
+              Text(
+                'Панель управления',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              Spacer(),
+              IconButton(
+                icon: Icon(Icons.refresh),
+                onPressed: _loadStats,
+                tooltip: 'Обновить статистику',
+              ),
+            ],
           ),
           SizedBox(height: 16),
 
@@ -158,25 +202,25 @@ class _DashboardHomeScreen extends StatelessWidget {
             children: [
               _StatsCard(
                 title: 'Пользователи',
-                value: '...',
+                value: _isLoading ? '...' : '${_stats?['users'] ?? 0}',
                 icon: Icons.people,
                 color: Colors.blue,
               ),
               _StatsCard(
                 title: 'Заказы',
-                value: '...',
+                value: _isLoading ? '...' : '${_stats?['orders'] ?? 0}',
                 icon: Icons.shopping_cart,
                 color: Colors.green,
               ),
               _StatsCard(
                 title: 'Товары',
-                value: '...',
+                value: _isLoading ? '...' : '${_stats?['products'] ?? 0}',
                 icon: Icons.inventory,
                 color: Colors.orange,
               ),
               _StatsCard(
                 title: 'Партии',
-                value: '...',
+                value: _isLoading ? '...' : '${_stats?['batches'] ?? 0}',
                 icon: Icons.local_shipping,
                 color: Colors.purple,
               ),
@@ -542,20 +586,227 @@ class _UsersManagementScreenState extends State<_UsersManagementScreen> {
   }
 }
 
-class _OrdersManagementScreen extends StatelessWidget {
+/// Управление заказами - РЕАЛЬНЫЙ ФУНКЦИОНАЛ
+class _OrdersManagementScreen extends StatefulWidget {
+  @override
+  _OrdersManagementScreenState createState() => _OrdersManagementScreenState();
+}
+
+class _OrdersManagementScreenState extends State<_OrdersManagementScreen> {
+  final AdminApiService _apiService = AdminApiService();
+  List<dynamic> _orders = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrders();
+  }
+
+  Future<void> _loadOrders() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final response = await _apiService.getOrders();
+      setState(() {
+        _orders = response['orders'] ?? [];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Ошибка загрузки: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'confirmed':
+        return Colors.blue;
+      case 'paid':
+        return Colors.green;
+      case 'shipped':
+        return Colors.purple;
+      case 'delivered':
+        return Colors.green[700]!;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getStatusText(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return 'Ожидает';
+      case 'confirmed':
+        return 'Подтвержден';
+      case 'paid':
+        return 'Оплачен';
+      case 'shipped':
+        return 'Отправлен';
+      case 'delivered':
+        return 'Доставлен';
+      case 'cancelled':
+        return 'Отменен';
+      default:
+        return status;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        children: [
+          // Заголовок
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.shopping_cart, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'Управление заказами',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                Spacer(),
+                IconButton(
+                  icon: Icon(Icons.refresh),
+                  onPressed: _loadOrders,
+                  tooltip: 'Обновить',
+                ),
+              ],
+            ),
+          ),
+
+          // Контент
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _buildErrorWidget()
+                    : _buildOrdersList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.shopping_cart, size: 64, color: Colors.grey),
+          Icon(Icons.error, size: 64, color: Colors.red),
           SizedBox(height: 16),
-          Text('Управление заказами'),
-          Text('Будет реализовано в следующей версии'),
+          Text(_error!),
+          SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadOrders,
+            child: Text('Повторить'),
+          ),
         ],
       ),
     );
+  }
+
+  Widget _buildOrdersList() {
+    if (_orders.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text('Заказы не найдены'),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.all(16),
+      itemCount: _orders.length,
+      itemBuilder: (context, index) {
+        final order = _orders[index];
+        return Card(
+          margin: EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: _getStatusColor(order['status']),
+              child: Text(
+                '#${order['id']}',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            title: Text(
+                '${order['user']['firstName'] ?? 'Пользователь'} ${order['user']['lastName'] ?? ''}'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Телефон: ${order['user']['phone']}'),
+                Text('Товаров: ${order['itemsCount']} шт.'),
+                Text('Дата: ${_formatDate(order['createdAt'])}'),
+              ],
+            ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(order['status']),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _getStatusText(order['status']),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '${order['totalAmount']} ₽',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green[700],
+                  ),
+                ),
+              ],
+            ),
+            isThreeLine: true,
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
+    } catch (e) {
+      return dateString;
+    }
   }
 }
 

@@ -198,21 +198,20 @@ class AdminApiService {
     return await _makeRequest('GET', '/auth/admin-users');
   }
 
+  /// Получить статистику для dashboard
+  Future<Map<String, dynamic>> getDashboardStats() async {
+    return await _makeRequest('GET', '/auth/admin-stats');
+  }
+
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ЗАКАЗАМИ ===
 
-  /// Получить список заказов
+  /// Получить список заказов (для админа)
   Future<Map<String, dynamic>> getOrders({
     int page = 1,
     int limit = 20,
     String? status,
   }) async {
-    final queryParams = <String, String>{
-      'page': page.toString(),
-      'limit': limit.toString(),
-      if (status != null) 'status': status,
-    };
-
-    return await _makeRequest('GET', '/orders', queryParams: queryParams);
+    return await _makeRequest('GET', '/auth/admin-orders');
   }
 
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ТОВАРАМИ ===
