@@ -1,6 +1,7 @@
 // lib/screens/dashboard_screen.dart - БАЗОВЫЙ DASHBOARD
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:severnaya_korzina_admin/screens/add_product_screen.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_api_service.dart';
 
@@ -257,10 +258,11 @@ class _DashboardHomeScreenState extends State<_DashboardHomeScreen> {
                 label: 'Новый товар',
                 icon: Icons.add_box,
                 onPressed: () {
-                  // TODO: Реализовать
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text('Будет реализовано в следующей версии')),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AddProductScreen(),
+                    ),
                   );
                 },
               ),

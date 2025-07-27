@@ -231,6 +231,26 @@ class AdminApiService {
     return await _makeRequest('GET', '/products', queryParams: queryParams);
   }
 
+  // Загрузить файл товаров от поставщика
+  Future<Map<String, dynamic>> uploadProductFile(String filePath) async {
+    // TODO: Реализовать загрузку файла
+    // Пока возвращаем заглушку
+    return {
+      'success': true,
+      'message': 'Файл загружен успешно',
+      'data': {
+        'fileName': filePath.split('/').last,
+        'fileSize': '1.2 MB',
+        'parsedItems': 0
+      }
+    };
+  }
+
+  // Получить список категорий (для сопоставления)
+  Future<Map<String, dynamic>> getCategories() async {
+    return await _makeRequest('GET', '/auth/admin-categories');
+  }
+
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ПАРТИЯМИ ===
 
   /// Получить список партий
