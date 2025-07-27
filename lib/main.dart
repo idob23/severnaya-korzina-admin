@@ -1,11 +1,10 @@
+// lib/main.dart - ПОЛНОСТЬЮ НОВАЯ ВЕРСИЯ
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:severnaya_korzina_admin/providers/admin_provider.dart';
-import 'package:severnaya_korzina_admin/providers/users_provider.dart';
-import 'package:severnaya_korzina_admin/providers/products_provider.dart';
-import 'package:severnaya_korzina_admin/providers/orders_provider.dart';
-import 'package:severnaya_korzina_admin/screens/auth/login_screen.dart';
-import 'package:severnaya_korzina_admin/screens/dashboard/dashboard_screen.dart';
+import 'services/admin_api_service.dart';
+import 'providers/auth_provider.dart';
+import 'screens/login_screen.dart';
+import 'screens/dashboard_screen.dart';
 
 void main() {
   runApp(SevernyaKorzinaAdminApp());
@@ -16,29 +15,31 @@ class SevernyaKorzinaAdminApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AdminProvider()),
-        ChangeNotifierProvider(create: (_) => UsersProvider()),
-        ChangeNotifierProvider(create: (_) => ProductsProvider()),
-        ChangeNotifierProvider(create: (_) => OrdersProvider()),
+        ChangeNotifierProvider(create: (context) => AuthProvider()),
       ],
       child: MaterialApp(
         title: 'Северная корзина - Админ панель',
         theme: ThemeData(
           primarySwatch: Colors.blue,
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.blue,
-            brightness: Brightness.light,
-          ),
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+          // Кастомная тема для админки
           appBarTheme: AppBarTheme(
             backgroundColor: Colors.blue[800],
             foregroundColor: Colors.white,
-            elevation: 2,
+            elevation: 0,
           ),
           cardTheme: CardThemeData(
             elevation: 2,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(8),
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue[600],
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
         ),
@@ -52,13 +53,31 @@ class SevernyaKorzinaAdminApp extends StatelessWidget {
 class AuthWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Consumer<AdminProvider>(
-      builder: (context, adminProvider, child) {
-        if (adminProvider.isAuthenticated) {
-          return DashboardScreen();
-        } else {
-          return LoginScreen();
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, child) {
+        // Показываем загрузку во время проверки токена
+        if (authProvider.isLoading) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Проверка авторизации...'),
+                ],
+              ),
+            ),
+          );
         }
+
+        // Если пользователь авторизован, показываем dashboard
+        if (authProvider.isAuthenticated) {
+          return DashboardScreen();
+        }
+
+        // Иначе показываем экран логина
+        return LoginScreen();
       },
     );
   }

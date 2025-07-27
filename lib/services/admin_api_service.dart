@@ -1,11 +1,11 @@
-// lib/services/admin_api_service.dart - НОВЫЙ СЕРВИС ДЛЯ РАБОТЫ С СЕРВЕРОМ
+// lib/services/admin_api_service.dart - ОБНОВЛЕННАЯ ВЕРСИЯ
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 
 class AdminApiService {
-  // URL сервера - должен совпадать с основным API
+  // URL сервера - точно такой же как у вашего основного API
   static String get baseUrl {
     if (kDebugMode) {
       // Для разработки
@@ -23,7 +23,7 @@ class AdminApiService {
   factory AdminApiService() => _instance;
   AdminApiService._internal();
 
-  // HTTP клиент с настройками
+  // HTTP клиент
   final http.Client _client = http.Client();
   String? _authToken;
 
@@ -60,6 +60,7 @@ class AdminApiService {
     try {
       if (kDebugMode) {
         print('AdminAPI: $method $baseUrl$endpoint');
+        if (body != null) print('AdminAPI Body: $body');
       }
 
       // Создаем URI с query параметрами
@@ -105,307 +106,202 @@ class AdminApiService {
       }
 
       if (kDebugMode) {
-        print('AdminAPI: Ответ - ${response.statusCode}');
+        print('AdminAPI Response: ${response.statusCode}');
+        print('AdminAPI Response Body: ${response.body}');
       }
 
       // Обрабатываем ответ
+      final Map<String, dynamic> responseData = jsonDecode(response.body);
+
+      // Проверяем статус код
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        try {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          return {
-            'success': true,
-            ...data,
-          };
-        } catch (e) {
-          return {
-            'success': false,
-            'error': 'Ошибка обработки ответа сервера',
-          };
-        }
+        return responseData;
       } else {
-        // Обрабатываем ошибки сервера
-        String errorMessage = 'Ошибка сервера (${response.statusCode})';
-
-        try {
-          final errorData = jsonDecode(response.body) as Map<String, dynamic>;
-          errorMessage = errorData['error']?.toString() ?? errorMessage;
-        } catch (e) {
-          // Если не удалось распарсить ошибку, используем стандартное сообщение
-        }
-
-        return {
-          'success': false,
-          'error': errorMessage,
-          'statusCode': response.statusCode,
-        };
+        throw ApiException(
+          statusCode: response.statusCode,
+          message: responseData['error'] ?? 'Неизвестная ошибка API',
+          data: responseData,
+        );
       }
     } catch (e) {
       if (kDebugMode) {
-        print('AdminAPI: Ошибка - $e');
+        print('AdminAPI Error: $e');
       }
-      return {
-        'success': false,
-        'error': 'Ошибка подключения к серверу: $e',
-      };
+      rethrow;
     }
   }
 
-  // === МЕТОДЫ ДЛЯ АВТОРИЗАЦИИ АДМИНА ===
+  // === МЕТОДЫ АУТЕНТИФИКАЦИИ ===
 
-  /// Авторизация администратора
-  Future<Map<String, dynamic>> adminLogin({
-    required String phone,
-    required String smsCode,
-  }) async {
-    final result = await _makeRequest('POST', '/auth/login', body: {
+  /// Простой вход по логину и паролю для админа
+  Future<Map<String, dynamic>> loginWithPassword(
+      String login, String password) async {
+    return await _makeRequest('POST', '/admin-auth/login', body: {
+      'login': login,
+      'password': password,
+    });
+  }
+
+  /// Получить профиль администратора
+  Future<Map<String, dynamic>> getAdminProfile() async {
+    return await _makeRequest('GET', '/admin-auth/profile');
+  }
+
+  /// Проверить токен администратора
+  Future<Map<String, dynamic>> checkAdminToken() async {
+    return await _makeRequest('GET', '/admin-auth/check');
+  }
+
+  /// Вход по номеру телефона (SMS код) - оставляем для будущего
+  Future<Map<String, dynamic>> sendSmsCode(String phone) async {
+    return await _makeRequest('POST', '/auth/send-sms', body: {'phone': phone});
+  }
+
+  /// Вход по SMS коду - оставляем для будущего
+  Future<Map<String, dynamic>> loginWithSms(String phone, String code) async {
+    final response = await _makeRequest('POST', '/auth/verify-sms', body: {
       'phone': phone,
-      'smsCode': smsCode,
+      'code': code,
     });
 
-    if (result['success'] && result['token'] != null) {
-      setAuthToken(result['token']);
+    // Сохраняем токен если получили его
+    if (response['token'] != null) {
+      setAuthToken(response['token']);
     }
 
-    return result;
+    return response;
   }
 
-  /// Проверка прав администратора
-  Future<Map<String, dynamic>> checkAdminRights() async {
+  /// Получить профиль пользователя
+  Future<Map<String, dynamic>> getProfile() async {
     return await _makeRequest('GET', '/auth/profile');
   }
 
-  // === МЕТОДЫ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ ===
+  /// Проверить токен
+  Future<Map<String, dynamic>> checkToken() async {
+    return await _makeRequest('GET', '/auth/check');
+  }
 
-  /// Получить всех пользователей
+  /// Выход из системы
+  Future<void> logout() async {
+    clearAuthToken();
+  }
+
+  // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ===
+
+  /// Получить список всех пользователей
   Future<Map<String, dynamic>> getUsers({
     int page = 1,
-    int limit = 50,
+    int limit = 20,
     String? search,
   }) async {
     final queryParams = <String, String>{
       'page': page.toString(),
       'limit': limit.toString(),
+      if (search != null && search.isNotEmpty) 'search': search,
     };
-
-    if (search != null && search.isNotEmpty) {
-      queryParams['search'] = search;
-    }
 
     return await _makeRequest('GET', '/users', queryParams: queryParams);
   }
 
   /// Получить пользователя по ID
-  Future<Map<String, dynamic>> getUser(int userId) async {
+  Future<Map<String, dynamic>> getUser(String userId) async {
     return await _makeRequest('GET', '/users/$userId');
   }
 
-  /// Обновить пользователя
-  Future<Map<String, dynamic>> updateUser(
-      int userId, Map<String, dynamic> userData) async {
-    return await _makeRequest('PUT', '/users/$userId', body: userData);
-  }
+  // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ЗАКАЗАМИ ===
 
-  /// Заблокировать/разблокировать пользователя
-  Future<Map<String, dynamic>> toggleUserStatus(
-      int userId, bool isActive) async {
-    return await _makeRequest('PUT', '/users/$userId/status', body: {
-      'isActive': isActive,
-    });
-  }
-
-  // === МЕТОДЫ ДЛЯ ТОВАРОВ ===
-
-  /// Получить все товары
-  Future<Map<String, dynamic>> getProducts({
-    int page = 1,
-    int limit = 50,
-    String? search,
-    int? categoryId,
-  }) async {
-    final queryParams = <String, String>{
-      'page': page.toString(),
-      'limit': limit.toString(),
-    };
-
-    if (search != null && search.isNotEmpty) {
-      queryParams['search'] = search;
-    }
-
-    if (categoryId != null) {
-      queryParams['categoryId'] = categoryId.toString();
-    }
-
-    return await _makeRequest('GET', '/products', queryParams: queryParams);
-  }
-
-  /// Создать товар
-  Future<Map<String, dynamic>> createProduct(
-      Map<String, dynamic> productData) async {
-    return await _makeRequest('POST', '/products', body: productData);
-  }
-
-  /// Обновить товар
-  Future<Map<String, dynamic>> updateProduct(
-      int productId, Map<String, dynamic> productData) async {
-    return await _makeRequest('PUT', '/products/$productId', body: productData);
-  }
-
-  /// Удалить товар
-  Future<Map<String, dynamic>> deleteProduct(int productId) async {
-    return await _makeRequest('DELETE', '/products/$productId');
-  }
-
-  // === МЕТОДЫ ДЛЯ КАТЕГОРИЙ ===
-
-  /// Получить все категории
-  Future<Map<String, dynamic>> getCategories() async {
-    return await _makeRequest('GET', '/products/categories/all');
-  }
-
-  /// Создать категорию
-  Future<Map<String, dynamic>> createCategory(
-      Map<String, dynamic> categoryData) async {
-    return await _makeRequest('POST', '/categories', body: categoryData);
-  }
-
-  /// Обновить категорию
-  Future<Map<String, dynamic>> updateCategory(
-      int categoryId, Map<String, dynamic> categoryData) async {
-    return await _makeRequest('PUT', '/categories/$categoryId',
-        body: categoryData);
-  }
-
-  /// Удалить категорию
-  Future<Map<String, dynamic>> deleteCategory(int categoryId) async {
-    return await _makeRequest('DELETE', '/categories/$categoryId');
-  }
-
-  // === МЕТОДЫ ДЛЯ ЗАКАЗОВ ===
-
-  /// Получить все заказы
+  /// Получить список заказов
   Future<Map<String, dynamic>> getOrders({
     int page = 1,
-    int limit = 50,
+    int limit = 20,
     String? status,
-    String? search,
   }) async {
     final queryParams = <String, String>{
       'page': page.toString(),
       'limit': limit.toString(),
+      if (status != null) 'status': status,
     };
-
-    if (status != null && status.isNotEmpty) {
-      queryParams['status'] = status;
-    }
-
-    if (search != null && search.isNotEmpty) {
-      queryParams['search'] = search;
-    }
 
     return await _makeRequest('GET', '/orders', queryParams: queryParams);
   }
 
-  /// Получить заказ по ID
-  Future<Map<String, dynamic>> getOrder(int orderId) async {
-    return await _makeRequest('GET', '/orders/$orderId');
+  // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ТОВАРАМИ ===
+
+  /// Получить список товаров
+  Future<Map<String, dynamic>> getProducts({
+    int page = 1,
+    int limit = 20,
+    String? search,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (search != null && search.isNotEmpty) 'search': search,
+    };
+
+    return await _makeRequest('GET', '/products', queryParams: queryParams);
   }
 
-  /// Обновить статус заказа
-  Future<Map<String, dynamic>> updateOrderStatus(
-      int orderId, String status) async {
-    return await _makeRequest('PUT', '/orders/$orderId/status', body: {
-      'status': status,
-    });
-  }
+  // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ПАРТИЯМИ ===
 
-  // === МЕТОДЫ ДЛЯ ЗАКУПОК ===
-
-  /// Получить все закупки
+  /// Получить список партий
   Future<Map<String, dynamic>> getBatches({
     int page = 1,
-    int limit = 50,
+    int limit = 20,
     String? status,
   }) async {
     final queryParams = <String, String>{
       'page': page.toString(),
       'limit': limit.toString(),
+      if (status != null) 'status': status,
     };
-
-    if (status != null && status.isNotEmpty) {
-      queryParams['status'] = status;
-    }
 
     return await _makeRequest('GET', '/batches', queryParams: queryParams);
   }
 
-  /// Создать закупку
-  Future<Map<String, dynamic>> createBatch(
-      Map<String, dynamic> batchData) async {
-    return await _makeRequest('POST', '/batches', body: batchData);
-  }
+  // === ПРОВЕРКА ЗДОРОВЬЯ СЕРВЕРА ===
 
-  /// Обновить закупку
-  Future<Map<String, dynamic>> updateBatch(
-      int batchId, Map<String, dynamic> batchData) async {
-    return await _makeRequest('PUT', '/batches/$batchId', body: batchData);
-  }
-
-  /// Обновить статус закупки
-  Future<Map<String, dynamic>> updateBatchStatus(
-      int batchId, String status) async {
-    return await _makeRequest('PUT', '/batches/$batchId/status', body: {
-      'status': status,
-    });
-  }
-
-  // === МЕТОДЫ ДЛЯ АНАЛИТИКИ ===
-
-  /// Получить статистику дашборда
-  Future<Map<String, dynamic>> getDashboardStats() async {
-    return await _makeRequest('GET', '/admin/dashboard/stats');
-  }
-
-  /// Получить данные для графиков
-  Future<Map<String, dynamic>> getAnalyticsData({
-    String period = 'month',
-    String type = 'orders',
-  }) async {
-    return await _makeRequest('GET', '/admin/analytics', queryParams: {
-      'period': period,
-      'type': type,
-    });
-  }
-
-  // === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
-
-  /// Проверка здоровья сервера
-  Future<Map<String, dynamic>> healthCheck() async {
+  /// Проверить работоспособность сервера
+  Future<Map<String, dynamic>> checkHealth() async {
     try {
-      final uri = Uri.parse('${baseUrl.replaceAll('/api', '')}/health');
-      final response = await _client.get(uri).timeout(Duration(seconds: 10));
+      final response = await _client
+          .get(Uri.parse('${baseUrl.replaceAll('/api', '')}/health'))
+          .timeout(Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        return {
-          'success': true,
-          'message': 'Сервер работает',
-          'data': jsonDecode(response.body),
-        };
-      } else {
-        return {
-          'success': false,
-          'error': 'Сервер недоступен (${response.statusCode})',
-        };
-      }
+      return jsonDecode(response.body);
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Не удалось подключиться к серверу: $e',
-      };
+      throw Exception('Сервер недоступен: $e');
     }
   }
 
-  /// Закрытие клиента
-  void dispose() {
-    _client.close();
+  /// Получить информацию об API
+  Future<Map<String, dynamic>> getApiInfo() async {
+    try {
+      final response =
+          await _client.get(Uri.parse(baseUrl)).timeout(Duration(seconds: 10));
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      throw Exception('Не удалось получить информацию об API: $e');
+    }
+  }
+}
+
+/// Исключение для ошибок API
+class ApiException implements Exception {
+  final int statusCode;
+  final String message;
+  final Map<String, dynamic>? data;
+
+  ApiException({
+    required this.statusCode,
+    required this.message,
+    this.data,
+  });
+
+  @override
+  String toString() {
+    return 'ApiException: $statusCode - $message';
   }
 }
