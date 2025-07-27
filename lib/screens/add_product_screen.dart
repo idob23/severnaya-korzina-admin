@@ -1,6 +1,9 @@
-// lib/screens/add_product_screen.dart - НОВЫЙ ЭКРАН ДОБАВЛЕНИЯ ТОВАРОВ
+// lib/screens/add_product_screen.dart - ПОЛНАЯ ВЕРСИЯ С ФОТО И OCR
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 import '../services/admin_api_service.dart';
 
 class AddProductScreen extends StatefulWidget {
@@ -10,6 +13,7 @@ class AddProductScreen extends StatefulWidget {
 
 class _AddProductScreenState extends State<AddProductScreen> {
   final AdminApiService _apiService = AdminApiService();
+  final ImagePicker _imagePicker = ImagePicker();
 
   // Состояние экрана
   bool _isLoading = false;
@@ -17,6 +21,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   // Данные загруженного файла
   PlatformFile? _selectedFile;
+  List<XFile> _selectedImages = [];
   List<Map<String, dynamic>> _parsedItems = [];
   bool _isFileProcessed = false;
 
@@ -52,6 +57,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       if (result != null && result.files.isNotEmpty) {
         setState(() {
           _selectedFile = result.files.first;
+          _selectedImages = [];
           _isFileProcessed = false;
           _parsedItems = [];
           _error = null;
@@ -64,8 +70,149 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+  Future<void> _pickImagesFromGallery() async {
+    try {
+      final List<XFile> images = await _imagePicker.pickMultiImage();
+
+      if (images.isNotEmpty) {
+        setState(() {
+          _selectedImages = images;
+          _selectedFile = null;
+          _isFileProcessed = false;
+          _parsedItems = [];
+          _error = null;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Ошибка выбора фотографий: $e';
+      });
+    }
+  }
+
+  Future<void> _takePhoto() async {
+    try {
+      // Проверяем разрешение на камеру
+      final cameraStatus = await Permission.camera.request();
+      if (!cameraStatus.isGranted) {
+        setState(() {
+          _error = 'Необходимо разрешение на использование камеры';
+        });
+        return;
+      }
+
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+
+      if (image != null) {
+        setState(() {
+          _selectedImages = [image];
+          _selectedFile = null;
+          _isFileProcessed = false;
+          _parsedItems = [];
+          _error = null;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Ошибка при фотографировании: $e';
+      });
+    }
+  }
+
+  Future<void> _scanDocument() async {
+    try {
+      // Проверяем разрешение на камеру
+      final cameraStatus = await Permission.camera.request();
+      if (!cameraStatus.isGranted) {
+        setState(() {
+          _error = 'Необходимо разрешение на использование камеры';
+        });
+        return;
+      }
+
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 100, // Максимальное качество для документов
+      );
+
+      if (image != null) {
+        setState(() {
+          _selectedImages = [image];
+          _selectedFile = null;
+          _isFileProcessed = false;
+          _parsedItems = [];
+          _error = null;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Ошибка сканирования: $e';
+      });
+    }
+  }
+
+  Future<void> _showImageSourceDialog() async {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Выберите источник',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 20),
+            ListTile(
+              leading: Icon(Icons.camera_alt, color: Colors.blue[600]),
+              title: Text('Сфотографировать документ'),
+              subtitle: Text('Сделать фото прайс-листа'),
+              onTap: () {
+                Navigator.pop(context);
+                _takePhoto();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.document_scanner, color: Colors.green[600]),
+              title: Text('Сканировать документ'),
+              subtitle: Text('Высокое качество для OCR'),
+              onTap: () {
+                Navigator.pop(context);
+                _scanDocument();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.photo_library, color: Colors.orange[600]),
+              title: Text('Выбрать из галереи'),
+              subtitle: Text('Загрузить готовые фото'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImagesFromGallery();
+              },
+            ),
+            SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Отмена'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _processFile() async {
-    if (_selectedFile == null) return;
+    if (_selectedFile == null && _selectedImages.isEmpty) return;
 
     setState(() {
       _isLoading = true;
@@ -73,11 +220,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
     });
 
     try {
-      // Имитируем обработку файла
-      await Future.delayed(Duration(seconds: 2));
+      // Имитируем обработку файла или изображений
+      await Future.delayed(Duration(seconds: 3));
 
-      // Генерируем тестовые данные
-      final mockItems = _generateMockParsedItems();
+      List<Map<String, dynamic>> mockItems;
+
+      if (_selectedImages.isNotEmpty) {
+        // Генерируем результаты для изображений (имитация OCR)
+        mockItems = _generateMockParsedItemsFromImages();
+      } else {
+        // Генерируем результаты для файлов
+        mockItems = _generateMockParsedItems();
+      }
 
       setState(() {
         _parsedItems = mockItems;
@@ -86,10 +240,46 @@ class _AddProductScreenState extends State<AddProductScreen> {
       });
     } catch (e) {
       setState(() {
-        _error = 'Ошибка обработки файла: $e';
+        _error = 'Ошибка обработки: $e';
         _isLoading = false;
       });
     }
+  }
+
+  List<Map<String, dynamic>> _generateMockParsedItemsFromImages() {
+    // Имитируем результат OCR обработки изображений
+    return [
+      {
+        'name': 'Хлеб белый нарезной',
+        'price': 52.00,
+        'unit': 'шт',
+        'description': 'Распознано с фото прайс-листа',
+        'suggestedCategory': 'Хлебобулочные изделия',
+        'categoryConfidence': 0.88,
+        'isApproved': false,
+        'source': 'OCR_IMAGE',
+      },
+      {
+        'name': 'Масло сливочное 72.5%',
+        'price': 195.00,
+        'unit': 'шт',
+        'description': 'Автоматически распознано из документа',
+        'suggestedCategory': 'Молочные продукты',
+        'categoryConfidence': 0.94,
+        'isApproved': false,
+        'source': 'OCR_IMAGE',
+      },
+      {
+        'name': 'Сахар песок',
+        'price': 67.50,
+        'unit': 'кг',
+        'description': 'Распознано методом OCR',
+        'suggestedCategory': 'Крупы и макароны',
+        'categoryConfidence': 0.79,
+        'isApproved': false,
+        'source': 'OCR_IMAGE',
+      },
+    ];
   }
 
   List<Map<String, dynamic>> _generateMockParsedItems() {
@@ -103,6 +293,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'suggestedCategory': 'Молочные продукты',
         'categoryConfidence': 0.95,
         'isApproved': false,
+        'source': 'FILE_PARSE',
       },
       {
         'name': 'Хлеб "Дарницкий"',
@@ -112,6 +303,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'suggestedCategory': 'Хлебобулочные изделия',
         'categoryConfidence': 0.92,
         'isApproved': false,
+        'source': 'FILE_PARSE',
       },
       {
         'name': 'Яблоки "Гала"',
@@ -121,6 +313,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'suggestedCategory': 'Овощи и фрукты',
         'categoryConfidence': 0.98,
         'isApproved': false,
+        'source': 'FILE_PARSE',
       },
     ];
   }
@@ -161,9 +354,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     ),
                     SizedBox(height: 8),
                     Text(
-                      '1. Выберите файл от поставщика (Excel, CSV или PDF)\n'
-                      '2. Система автоматически обработает и распознает товары\n'
-                      '3. Проверьте и одобрите предложенные категории\n'
+                      '1. Выберите файл от поставщика (Excel, CSV, PDF) или сфотографируйте прайс-лист\n'
+                      '2. Система автоматически обработает данные с помощью OCR и AI\n'
+                      '3. Проверьте и одобрите предложенные категории товаров\n'
                       '4. Подтвердите добавление в базу данных',
                       style: TextStyle(color: Colors.blue[700]),
                     ),
@@ -182,7 +375,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
               _buildFileInfoSection(),
             ],
 
-            if (_selectedFile != null && !_isFileProcessed) ...[
+            if (_selectedImages.isNotEmpty) ...[
+              SizedBox(height: 24),
+              _buildImagesInfoSection(),
+            ],
+
+            if ((_selectedFile != null || _selectedImages.isNotEmpty) &&
+                !_isFileProcessed) ...[
               SizedBox(height: 24),
               _buildProcessButton(),
             ],
@@ -210,52 +409,81 @@ class _AddProductScreenState extends State<AddProductScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Шаг 1: Выбор файла',
+              'Шаг 1: Выбор источника данных',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
             ),
             SizedBox(height: 16),
-            InkWell(
-              onTap: _pickFile,
-              child: Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Colors.grey[300]!,
-                    style: BorderStyle.solid,
-                    width: 2,
+
+            // Кнопки выбора
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _pickFile,
+                    icon: Icon(Icons.attach_file),
+                    label: Text('Выбрать файл'),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.grey[50],
                 ),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.cloud_upload,
-                      size: 48,
-                      color: Colors.blue[600],
+                SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _showImageSourceDialog,
+                    icon: Icon(Icons.camera_alt),
+                    label: Text('Фото/Скан'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[600],
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(vertical: 12),
                     ),
-                    SizedBox(height: 16),
-                    Text(
-                      'Выберите файл от поставщика',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Поддерживаемые форматы: Excel (.xlsx, .xls), CSV, PDF',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
+              ],
+            ),
+
+            SizedBox(height: 16),
+
+            // Информация о форматах
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 16, color: Colors.blue[600]),
+                      SizedBox(width: 8),
+                      Text(
+                        'Поддерживаемые форматы:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: Colors.blue[800],
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '📄 Файлы: Excel (.xlsx, .xls), CSV, PDF\n'
+                    '📷 Фото: Прайс-листы, каталоги товаров\n'
+                    '📋 Сканы: Документы от поставщиков',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -326,7 +554,112 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
+  Widget _buildImagesInfoSection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Выбранные изображения',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Spacer(),
+                IconButton(
+                  icon: Icon(Icons.close),
+                  onPressed: () {
+                    setState(() {
+                      _selectedImages = [];
+                      _parsedItems = [];
+                      _isFileProcessed = false;
+                    });
+                  },
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            Container(
+              height: 120,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _selectedImages.length,
+                itemBuilder: (context, index) {
+                  final image = _selectedImages[index];
+                  return Container(
+                    width: 100,
+                    margin: EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(image.path),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey[200],
+                            child: Icon(
+                              Icons.image_not_supported,
+                              color: Colors.grey[600],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_awesome, color: Colors.green[600], size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Изображения будут обработаны с помощью OCR для извлечения информации о товарах',
+                      style: TextStyle(
+                        color: Colors.green[700],
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildProcessButton() {
+    String buttonText;
+    String loadingText;
+
+    if (_selectedImages.isNotEmpty) {
+      buttonText = 'Обработать изображения (OCR)';
+      loadingText = 'Распознавание текста...';
+    } else {
+      buttonText = 'Обработать файл';
+      loadingText = 'Обработка файла...';
+    }
+
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
@@ -349,11 +682,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     ),
                   ),
                   SizedBox(width: 12),
-                  Text('Обработка файла...'),
+                  Text(loadingText),
                 ],
               )
             : Text(
-                'Обработать файл',
+                buttonText,
                 style: TextStyle(fontSize: 16),
               ),
       ),
@@ -501,6 +834,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     fontSize: 12,
                   ),
                 ),
+                Spacer(),
+                _buildSourceChip(item['source']),
               ],
             ),
           ],
@@ -526,6 +861,53 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSourceChip(String? source) {
+    IconData icon;
+    String text;
+    Color color;
+
+    switch (source) {
+      case 'OCR_IMAGE':
+        icon = Icons.image;
+        text = 'OCR';
+        color = Colors.green[600]!;
+        break;
+      case 'FILE_PARSE':
+        icon = Icons.description;
+        text = 'Файл';
+        color = Colors.blue[600]!;
+        break;
+      default:
+        icon = Icons.help_outline;
+        text = 'Авто';
+        color = Colors.grey[600]!;
+    }
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }
