@@ -195,9 +195,11 @@ class _DashboardHomeScreenState extends State<_DashboardHomeScreen> {
 
           // Карточки со статистикой
           GridView.count(
-            crossAxisCount: 2,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
+            crossAxisCount: 4,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio:
+                0.85, // ДОБАВЛЕНО: соотношение сторон для компактности
             shrinkWrap: true,
             physics: NeverScrollableScrollPhysics(),
             children: [
