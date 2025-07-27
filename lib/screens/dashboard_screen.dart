@@ -810,37 +810,505 @@ class _OrdersManagementScreenState extends State<_OrdersManagementScreen> {
   }
 }
 
-class _ProductsManagementScreen extends StatelessWidget {
+/// Управление товарами - РЕАЛЬНЫЙ ФУНКЦИОНАЛ
+class _ProductsManagementScreen extends StatefulWidget {
+  @override
+  _ProductsManagementScreenState createState() =>
+      _ProductsManagementScreenState();
+}
+
+class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
+  final AdminApiService _apiService = AdminApiService();
+  List<dynamic> _products = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final response = await _apiService.getProducts();
+      setState(() {
+        _products = response['products'] ?? [];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Ошибка загрузки: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Color _getCategoryColor(String? categoryName) {
+    if (categoryName == null) return Colors.grey;
+
+    switch (categoryName.toLowerCase()) {
+      case 'молочные продукты':
+        return Colors.blue;
+      case 'мясо и птица':
+        return Colors.red;
+      case 'хлебобулочные изделия':
+        return Colors.orange;
+      case 'овощи и фрукты':
+        return Colors.green;
+      case 'крупы и макароны':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return Scaffold(
+      body: Column(
         children: [
-          Icon(Icons.inventory, size: 64, color: Colors.grey),
-          SizedBox(height: 16),
-          Text('Управление товарами'),
-          Text('Будет реализовано в следующей версии'),
+          // Заголовок
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.inventory, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'Управление товарами',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                Spacer(),
+                IconButton(
+                  icon: Icon(Icons.refresh),
+                  onPressed: _loadProducts,
+                  tooltip: 'Обновить',
+                ),
+              ],
+            ),
+          ),
+
+          // Контент
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _buildErrorWidget()
+                    : _buildProductsList(),
+          ),
         ],
       ),
     );
   }
-}
 
-class _BatchesManagementScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildErrorWidget() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.local_shipping, size: 64, color: Colors.grey),
+          Icon(Icons.error, size: 64, color: Colors.red),
           SizedBox(height: 16),
-          Text('Управление партиями'),
-          Text('Будет реализовано в следующей версии'),
+          Text(_error!),
+          SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadProducts,
+            child: Text('Повторить'),
+          ),
         ],
       ),
     );
+  }
+
+  Widget _buildProductsList() {
+    if (_products.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.inventory_outlined, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text('Товары не найдены'),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.all(16),
+      itemCount: _products.length,
+      itemBuilder: (context, index) {
+        final product = _products[index];
+        return Card(
+          margin: EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            leading: Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: _getCategoryColor(product['category']?['name']),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.shopping_bag,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+            title: Text(
+              product['name'] ?? 'Без названия',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    'Категория: ${product['category']?['name'] ?? 'Не указана'}'),
+                Text('Единица: ${product['unit'] ?? 'шт'}'),
+                if (product['description'] != null)
+                  Text(
+                    product['description'],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+              ],
+            ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${product['price']} ₽',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.green[700],
+                  ),
+                ),
+                SizedBox(height: 4),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color:
+                        product['isActive'] == true ? Colors.green : Colors.red,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    product['isActive'] == true ? 'Активен' : 'Скрыт',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            isThreeLine: true,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Управление партиями - РЕАЛЬНЫЙ ФУНКЦИОНАЛ
+class _BatchesManagementScreen extends StatefulWidget {
+  @override
+  _BatchesManagementScreenState createState() =>
+      _BatchesManagementScreenState();
+}
+
+class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
+  final AdminApiService _apiService = AdminApiService();
+  List<dynamic> _batches = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBatches();
+  }
+
+  Future<void> _loadBatches() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final response = await _apiService.getBatches();
+      setState(() {
+        _batches = response['batches'] ?? [];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Ошибка загрузки: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return Colors.green;
+      case 'closed':
+        return Colors.orange;
+      case 'completed':
+        return Colors.blue;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getStatusText(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return 'Активна';
+      case 'closed':
+        return 'Закрыта';
+      case 'completed':
+        return 'Завершена';
+      case 'cancelled':
+        return 'Отменена';
+      default:
+        return status;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        children: [
+          // Заголовок
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.local_shipping, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'Управление партиями',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                Spacer(),
+                IconButton(
+                  icon: Icon(Icons.refresh),
+                  onPressed: _loadBatches,
+                  tooltip: 'Обновить',
+                ),
+              ],
+            ),
+          ),
+
+          // Контент
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _buildErrorWidget()
+                    : _buildBatchesList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error, size: 64, color: Colors.red),
+          SizedBox(height: 16),
+          Text(_error!),
+          SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadBatches,
+            child: Text('Повторить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBatchesList() {
+    if (_batches.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.local_shipping_outlined, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text('Партии не найдены'),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.all(16),
+      itemCount: _batches.length,
+      itemBuilder: (context, index) {
+        final batch = _batches[index];
+        return Card(
+          margin: EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Заголовок партии
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        batch['title'] ?? 'Без названия',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(batch['status']),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _getStatusText(batch['status']),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                if (batch['description'] != null) ...[
+                  SizedBox(height: 8),
+                  Text(
+                    batch['description'],
+                    style: TextStyle(color: Colors.grey[600]),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+
+                SizedBox(height: 12),
+
+                // Информация о партии
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildInfoRow(Icons.people,
+                              'Участников: ${batch['participantsCount']}/${batch['minParticipants']}'),
+                          _buildInfoRow(Icons.shopping_bag,
+                              'Товаров: ${batch['productsCount']}'),
+                          _buildInfoRow(Icons.calendar_today,
+                              'Окончание: ${_formatDate(batch['endDate'])}'),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Сумма:',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        ),
+                        Text(
+                          '${batch['totalValue']} ₽',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                // Прогресс-бар участников
+                if (batch['status'] == 'active') ...[
+                  SizedBox(height: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Прогресс набора участников',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      SizedBox(height: 4),
+                      LinearProgressIndicator(
+                        value: (batch['participantsCount'] /
+                                batch['minParticipants'])
+                            .clamp(0.0, 1.0),
+                        backgroundColor: Colors.grey[300],
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          batch['participantsCount'] >= batch['minParticipants']
+                              ? Colors.green
+                              : Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String text) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.grey[600]),
+          SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
+    } catch (e) {
+      return dateString;
+    }
   }
 }
 
