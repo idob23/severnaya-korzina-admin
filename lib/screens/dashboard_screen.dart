@@ -20,6 +20,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _OrdersManagementScreen(),
     _ProductsManagementScreen(),
     _BatchesManagementScreen(),
+    _MoneyCollectionScreen(), // <-- НОВЫЙ ЭКРАН ЗДЕСЬ
     _SettingsScreen(),
   ];
 
@@ -44,6 +45,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     BottomNavigationBarItem(
       icon: Icon(Icons.local_shipping),
       label: 'Партии',
+    ),
+    BottomNavigationBarItem(
+      // <-- НОВАЯ ВКЛАДКА ЗДЕСЬ
+      icon: Icon(Icons.attach_money),
+      label: 'Сбор денег',
     ),
     BottomNavigationBarItem(
       icon: Icon(Icons.settings),
@@ -1328,6 +1334,260 @@ class _SettingsScreen extends StatelessWidget {
           Text('Настройки'),
           Text('Будет реализовано в следующей версии'),
         ],
+      ),
+    );
+  }
+}
+
+// lib/screens/dashboard_screen.dart - ШАГ 2: ЗАМЕНЯЕМ ЗАГЛУШКУ НА РЕАЛЬНЫЙ ЭКРАН
+
+// Замените класс _MoneyCollectionScreen на этот код:
+
+/// Экран управления сбором денег - ИСПРАВЛЕННАЯ ВЕРСИЯ
+class _MoneyCollectionScreen extends StatefulWidget {
+  @override
+  _MoneyCollectionScreenState createState() => _MoneyCollectionScreenState();
+}
+
+class _MoneyCollectionScreenState extends State<_MoneyCollectionScreen> {
+  final AdminApiService _apiService = AdminApiService(); // ДОБАВИЛИ ЭТУ СТРОКУ
+  final _targetAmountController = TextEditingController();
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Устанавливаем значение по умолчанию (3 млн рублей)
+    _targetAmountController.text = '3000000';
+  }
+
+  @override
+  void dispose() {
+    _targetAmountController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Заголовок
+            Text(
+              'Управление сбором денег',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+
+            SizedBox(height: 32),
+
+            // Поле для целевой суммы
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Целевая сумма для сбора',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    SizedBox(height: 12),
+                    TextField(
+                      controller: _targetAmountController,
+                      decoration: InputDecoration(
+                        labelText: 'Сумма в рублях',
+                        prefixText: '₽ ',
+                        border: OutlineInputBorder(),
+                        hintText: 'Например: 3000000',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            SizedBox(height: 24),
+
+            // Кнопки управления
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Управление сбором',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    SizedBox(height: 16),
+
+                    // Кнопка "Начать сбор"
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isLoading ? null : _startCollection,
+                        icon: _isLoading
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(Icons.play_arrow),
+                        label: Text('Начать сбор денег'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                        ),
+                      ),
+                    ),
+
+                    SizedBox(height: 12),
+
+                    // Кнопка "Завершить сбор"
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isLoading ? null : _stopCollection,
+                        icon: _isLoading
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(Icons.stop),
+                        label: Text('Завершить сбор денег'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            SizedBox(height: 24),
+
+            // Информация
+            Card(
+              color: Colors.blue[50],
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Text(
+                          'Как это работает',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      '• Установите целевую сумму для коллективной закупки\n'
+                      '• Нажмите "Начать сбор" - откроется прием заказов\n'
+                      '• Пользователи смогут делать заказы через приложение\n'
+                      '• Когда накопится нужная сумма, нажмите "Завершить сбор"',
+                      style: TextStyle(color: Colors.blue[700]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // РЕАЛЬНЫЙ МЕТОД - Начать сбор денег
+  Future<void> _startCollection() async {
+    final targetAmount = _targetAmountController.text.trim();
+
+    if (targetAmount.isEmpty) {
+      _showSnackBar('Введите целевую сумму', isError: true);
+      return;
+    }
+
+    final amount = double.tryParse(targetAmount);
+    if (amount == null || amount <= 0) {
+      _showSnackBar('Введите корректную сумму', isError: true);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // ВЫЗЫВАЕМ РЕАЛЬНЫЙ API
+      final response = await _apiService.startMoneyCollection(
+        targetAmount: amount,
+        title:
+            'Коллективная закупка ${DateTime.now().day}.${DateTime.now().month}',
+      );
+
+      if (response['success'] == true) {
+        _showSnackBar(response['message'] ?? 'Сбор денег начат!');
+      } else {
+        _showSnackBar(response['error'] ?? 'Ошибка запуска сбора',
+            isError: true);
+      }
+    } catch (e) {
+      _showSnackBar('Ошибка: $e', isError: true);
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // РЕАЛЬНЫЙ МЕТОД - Завершить сбор денег
+  Future<void> _stopCollection() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // ВЫЗЫВАЕМ РЕАЛЬНЫЙ API
+      final response = await _apiService.stopMoneyCollection();
+
+      if (response['success'] == true) {
+        _showSnackBar(response['message'] ?? 'Сбор денег завершен!');
+      } else {
+        _showSnackBar(response['error'] ?? 'Ошибка завершения сбора',
+            isError: true);
+      }
+    } catch (e) {
+      _showSnackBar('Ошибка: $e', isError: true);
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // ДОБАВИЛИ НЕДОСТАЮЩИЙ МЕТОД - Показать уведомление
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }

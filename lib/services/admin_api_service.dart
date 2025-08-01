@@ -268,6 +268,27 @@ class AdminApiService {
     return await _makeRequest('GET', '/batches', queryParams: queryParams);
   }
 
+  /// Начать сбор денег (создать или активировать партию)
+  Future<Map<String, dynamic>> startMoneyCollection({
+    required double targetAmount,
+    String title = 'Коллективная закупка',
+  }) async {
+    return await _makeRequest('POST', '/batches/start-collection', body: {
+      'targetAmount': targetAmount,
+      'title': title,
+    });
+  }
+
+  /// Завершить сбор денег (перевести партию в готовность)
+  Future<Map<String, dynamic>> stopMoneyCollection() async {
+    return await _makeRequest('POST', '/batches/stop-collection');
+  }
+
+  /// Получить активную партию для информационной панели
+  Future<Map<String, dynamic>> getActiveBatch() async {
+    return await _makeRequest('GET', '/batches/active');
+  }
+
   // === ПРОВЕРКА ЗДОРОВЬЯ СЕРВЕРА ===
 
   /// Проверить работоспособность сервера
