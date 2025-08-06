@@ -7,15 +7,8 @@ import 'package:flutter/foundation.dart';
 class AdminApiService {
   // URL сервера - точно такой же как у вашего основного API
   static String get baseUrl {
-    if (kDebugMode) {
-      // Для разработки
-      if (Platform.isAndroid) {
-        return 'http://10.0.2.2:3000/api';
-      }
-      return 'http://localhost:3000/api';
-    }
-    // Для продакшена
-    return 'https://your-server.com/api';
+    // Всегда используем внешний сервер, так как локального нет
+    return 'http://84.201.149.245:3000/api';
   }
 
   // Singleton паттерн
@@ -189,7 +182,7 @@ class AdminApiService {
     int limit = 20,
     String? status,
   }) async {
-    return await _makeRequest('GET', '/admin/orders', queryParams: {
+    return await _makeRequest('GET', '/auth/admin-orders', queryParams: {
       'page': page.toString(),
       'limit': limit.toString(),
       if (status != null) 'status': status,
@@ -210,7 +203,7 @@ class AdminApiService {
     int limit = 20,
     String? search,
   }) async {
-    return await _makeRequest('GET', '/products', queryParams: {
+    return await _makeRequest('GET', '/auth/admin-products', queryParams: {
       'page': page.toString(),
       'limit': limit.toString(),
       if (search != null) 'search': search,
@@ -263,7 +256,7 @@ class AdminApiService {
     int limit = 20,
     String? status,
   }) async {
-    return await _makeRequest('GET', '/admin/batches', queryParams: {
+    return await _makeRequest('GET', '/auth/admin-batches', queryParams: {
       'page': page.toString(),
       'limit': limit.toString(),
       if (status != null) 'status': status,

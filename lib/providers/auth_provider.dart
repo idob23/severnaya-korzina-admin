@@ -177,8 +177,13 @@ class AuthProvider with ChangeNotifier {
       final response = await _apiService.checkAdminToken();
       return true; // Если запрос прошел - сервер доступен
     } catch (e) {
+      // Проверяем тип ошибки
+      if (e.toString().contains('401') || e.toString().contains('403')) {
+        // Если ошибка 401 или 403 - это значит сервер доступен, просто нет авторизации
+        return true;
+      }
       print('Сервер недоступен: $e');
-      return false; // Если ошибка - сервер недоступен
+      return false; // Если другая ошибка - сервер недоступен
     }
   }
 }
