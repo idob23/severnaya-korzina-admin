@@ -107,7 +107,9 @@ class AdminApiService {
 
       if (kDebugMode) {
         print('AdminAPI Response: ${response.statusCode}');
-        print('AdminAPI Response Body: ${response.body}');
+        if (response.body.length < 500) {
+          print('AdminAPI Response Body: ${response.body}');
+        }
       }
 
       // Обрабатываем ответ
@@ -136,10 +138,17 @@ class AdminApiService {
   /// Простой вход по логину и паролю для админа
   Future<Map<String, dynamic>> loginWithPassword(
       String login, String password) async {
-    return await _makeRequest('POST', '/auth/admin-login', body: {
+    final response = await _makeRequest('POST', '/auth/admin-login', body: {
       'login': login,
       'password': password,
     });
+
+    // Сохраняем токен если получили его
+    if (response['token'] != null) {
+      setAuthToken(response['token']);
+    }
+
+    return response;
   }
 
   /// Получить профиль администратора
@@ -152,41 +161,10 @@ class AdminApiService {
     return await _makeRequest('GET', '/auth/admin-check');
   }
 
-  /// Вход по номеру телефона (SMS код) - оставляем для будущего
-  Future<Map<String, dynamic>> sendSmsCode(String phone) async {
-    return await _makeRequest('POST', '/auth/send-sms', body: {'phone': phone});
-  }
-
-  /// Вход по SMS коду - оставляем для будущего
-  Future<Map<String, dynamic>> loginWithSms(String phone, String code) async {
-    final response = await _makeRequest('POST', '/auth/verify-sms', body: {
-      'phone': phone,
-      'code': code,
-    });
-
-    // Сохраняем токен если получили его
-    if (response['token'] != null) {
-      setAuthToken(response['token']);
-    }
-
-    return response;
-  }
-
-  /// Получить профиль пользователя
-  Future<Map<String, dynamic>> getProfile() async {
-    return await _makeRequest('GET', '/auth/profile');
-  }
-
-  /// Проверить токен
-  Future<Map<String, dynamic>> checkToken() async {
-    return await _makeRequest('GET', '/auth/check');
-  }
-
   /// Выход из системы
   Future<void> logout() async {
     clearAuthToken();
   }
-
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ===
 
   /// Получить список всех пользователей (для админа)
@@ -211,10 +189,20 @@ class AdminApiService {
     int limit = 20,
     String? status,
   }) async {
-    return await _makeRequest('GET', '/auth/admin-orders');
+    return await _makeRequest('GET', '/admin/orders', queryParams: {
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (status != null) 'status': status,
+    });
   }
 
-  // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ТОВАРАМИ ===
+  /// Обновить статус заказа
+  Future<Map<String, dynamic>> updateOrderStatus(
+      int orderId, String status) async {
+    return await _makeRequest('PUT', '/orders/$orderId/status', body: {
+      'status': status,
+    });
+  }
 
   /// Получить список товаров
   Future<Map<String, dynamic>> getProducts({
@@ -222,13 +210,29 @@ class AdminApiService {
     int limit = 20,
     String? search,
   }) async {
-    final queryParams = <String, String>{
+    return await _makeRequest('GET', '/products', queryParams: {
       'page': page.toString(),
       'limit': limit.toString(),
-      if (search != null && search.isNotEmpty) 'search': search,
-    };
+      if (search != null) 'search': search,
+    });
+  }
 
-    return await _makeRequest('GET', '/products', queryParams: queryParams);
+  /// Создать новый товар
+  Future<Map<String, dynamic>> createProduct(
+      Map<String, dynamic> productData) async {
+    return await _makeRequest('POST', '/admin/products', body: productData);
+  }
+
+  /// Обновить товар
+  Future<Map<String, dynamic>> updateProduct(
+      int productId, Map<String, dynamic> productData) async {
+    return await _makeRequest('PUT', '/admin/products/$productId',
+        body: productData);
+  }
+
+  /// Удалить товар
+  Future<Map<String, dynamic>> deleteProduct(int productId) async {
+    return await _makeRequest('DELETE', '/admin/products/$productId');
   }
 
   // Загрузить файл товаров от поставщика
@@ -259,13 +263,25 @@ class AdminApiService {
     int limit = 20,
     String? status,
   }) async {
-    final queryParams = <String, String>{
+    return await _makeRequest('GET', '/admin/batches', queryParams: {
       'page': page.toString(),
       'limit': limit.toString(),
       if (status != null) 'status': status,
-    };
+    });
+  }
 
-    return await _makeRequest('GET', '/batches', queryParams: queryParams);
+  /// Создать новую партию
+  Future<Map<String, dynamic>> createBatch(
+      Map<String, dynamic> batchData) async {
+    return await _makeRequest('POST', '/admin/batches', body: batchData);
+  }
+
+  /// Обновить статус партии
+  Future<Map<String, dynamic>> updateBatchStatus(
+      int batchId, String status) async {
+    return await _makeRequest('PUT', '/admin/batches/$batchId/status', body: {
+      'status': status,
+    });
   }
 
   /// Начать сбор денег (создать или активировать партию)

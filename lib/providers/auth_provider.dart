@@ -1,4 +1,4 @@
-// lib/providers/auth_provider.dart - НОВЫЙ ПРОВАЙДЕР
+// lib/providers/auth_provider.dart - ПОЛНАЯ ВЕРСИЯ
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_api_service.dart';
@@ -21,7 +21,6 @@ class AuthProvider with ChangeNotifier {
   // Проверяем является ли пользователь администратором
   bool get isAdmin {
     if (_user == null) return false;
-
     // Для админа проверяем роль
     return _user!['role'] == 'admin';
   }
@@ -58,7 +57,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// Простой вход по логину и паролю - РЕАЛЬНЫЙ API
+  /// Простой вход по логину и паролю - ОСНОВНОЙ МЕТОД ДЛЯ АДМИНА
   Future<bool> loginWithPassword(String login, String password) async {
     _clearError();
     _setLoading(true);
@@ -77,6 +76,13 @@ class AuthProvider with ChangeNotifier {
         // Устанавливаем данные пользователя
         _user = response['user'];
 
+        // Проверяем права администратора
+        if (!isAdmin) {
+          _setError('У вас нет прав администратора');
+          await _clearAuthData();
+          return false;
+        }
+
         _isAuthenticated = true;
         notifyListeners();
         return true;
@@ -92,72 +98,16 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// Отправка SMS кода - оставляем для будущего
-  Future<bool> sendSmsCode(String phone) async {
-    _clearError();
-    _setLoading(true);
-
-    try {
-      final response = await _apiService.sendSmsCode(phone);
-      if (response['success'] == true) {
-        return true;
-      } else {
-        _setError(response['error'] ?? 'Ошибка отправки SMS');
-        return false;
-      }
-    } catch (e) {
-      _setError('Ошибка отправки SMS: $e');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Вход по SMS коду - оставляем для будущего
-  Future<bool> loginWithSms(String phone, String code) async {
-    _clearError();
-    _setLoading(true);
-
-    try {
-      final response = await _apiService.loginWithSms(phone, code);
-
-      if (response['success'] == true && response['token'] != null) {
-        // Сохраняем токен
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('auth_token', response['token']);
-
-        // Устанавливаем данные пользователя
-        _user = response['user'];
-
-        // Проверяем права администратора
-        if (!isAdmin) {
-          _setError('У вас нет прав администратора');
-          await _clearAuthData();
-          return false;
-        }
-
-        _isAuthenticated = true;
-        notifyListeners();
-        return true;
-      } else {
-        _setError(response['error'] ?? 'Неверный код');
-        return false;
-      }
-    } catch (e) {
-      _setError('Ошибка входа: $e');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Загрузка профиля администратора
+  /// Загрузка профиля пользователя
   Future<void> _loadUserProfile() async {
     try {
       final response = await _apiService.getAdminProfile();
       if (response['success'] == true) {
         _user = response['user'];
         _isAuthenticated = true;
+        notifyListeners();
+      } else {
+        await _clearAuthData();
       }
     } catch (e) {
       print('Ошибка загрузки профиля: $e');
@@ -167,19 +117,11 @@ class AuthProvider with ChangeNotifier {
 
   /// Выход из системы
   Future<void> logout() async {
-    _setLoading(true);
-    try {
-      await _apiService.logout();
-      await _clearAuthData();
-    } catch (e) {
-      print('Ошибка выхода: $e');
-      await _clearAuthData();
-    } finally {
-      _setLoading(false);
-    }
+    await _clearAuthData();
+    notifyListeners();
   }
 
-  /// Очистка данных аутентификации
+  /// Очистка данных авторизации
   Future<void> _clearAuthData() async {
     _isAuthenticated = false;
     _user = null;
@@ -187,18 +129,16 @@ class AuthProvider with ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
-
-    notifyListeners();
   }
 
   /// Установка состояния загрузки
-  void _setLoading(bool loading) {
-    _isLoading = loading;
+  void _setLoading(bool value) {
+    _isLoading = value;
     notifyListeners();
   }
 
   /// Установка ошибки
-  void _setError(String error) {
+  void _setError(String? error) {
     _error = error;
     notifyListeners();
   }
@@ -206,16 +146,39 @@ class AuthProvider with ChangeNotifier {
   /// Очистка ошибки
   void _clearError() {
     _error = null;
+  }
+
+  /// Публичный метод очистки ошибки (для использования из UI)
+  void clearError() {
+    _clearError();
     notifyListeners();
   }
 
-  /// Проверка подключения к серверу
-  Future<bool> checkServerConnection() async {
+  /// Обновление данных пользователя
+  void updateUser(Map<String, dynamic> userData) {
+    _user = userData;
+    notifyListeners();
+  }
+
+  /// Проверка токена
+  Future<bool> checkToken() async {
     try {
-      await _apiService.checkHealth();
-      return true;
+      final response = await _apiService.checkAdminToken();
+      return response['success'] == true;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Проверка соединения с сервером
+  Future<bool> checkServerConnection() async {
+    try {
+      // Пробуем получить токен или сделать запрос к серверу
+      final response = await _apiService.checkAdminToken();
+      return true; // Если запрос прошел - сервер доступен
+    } catch (e) {
+      print('Сервер недоступен: $e');
+      return false; // Если ошибка - сервер недоступен
     }
   }
 }
