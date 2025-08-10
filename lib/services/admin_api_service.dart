@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AdminApiService {
   // URL сервера - точно такой же как у вашего основного API
@@ -248,6 +250,15 @@ class AdminApiService {
     return await _makeRequest('GET', '/auth/admin-categories');
   }
 
+  /// Создать новую категорию
+  Future<Map<String, dynamic>> createCategory(String name,
+      {String? description}) async {
+    return await _makeRequest('POST', '/auth/admin-categories', body: {
+      'name': name,
+      if (description != null) 'description': description,
+    });
+  }
+
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ПАРТИЯМИ ===
 
   /// Получить список партий
@@ -311,6 +322,76 @@ class AdminApiService {
     } catch (e) {
       throw Exception('Сервер недоступен: $e');
     }
+  }
+
+  /// Парсинг файла с товарами
+  Future<Map<String, dynamic>> parseProductFile(String filePath) async {
+    try {
+      // Используем существующий токен из класса
+      if (_authToken == null) {
+        // Пробуем получить из SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        _authToken = prefs.getString('admin_token');
+
+        if (_authToken == null) {
+          throw Exception('Токен авторизации не найден');
+        }
+      }
+
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/admin/products/parse'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $_authToken';
+
+      // Добавляем файл
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          filePath,
+          contentType: MediaType('text', 'csv'), // Определим тип автоматически
+        ),
+      );
+      print('Отправляем файл на сервер: $filePath');
+      print('URL: $baseUrl/admin/products/parse');
+      print('Токен есть: ${_authToken != null}');
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print('Ответ сервера: ${response.statusCode}');
+      print('Тело ответа: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        final error = json.decode(response.body);
+        throw Exception(error['error'] ?? 'Ошибка парсинга файла');
+      }
+    } catch (e) {
+      print('Ошибка в parseProductFile: $e');
+      throw Exception('Ошибка загрузки файла: $e');
+    }
+  }
+
+  /// Массовое создание товаров
+  Future<Map<String, dynamic>> bulkCreateProducts(
+      List<Map<String, dynamic>> products) async {
+    return await _makeRequest('POST', '/admin/products/bulk', body: {
+      'products': products,
+    });
+  }
+
+  /// Получить существующие товары для сравнения
+  Future<Map<String, dynamic>> getExistingProducts({
+    String? search,
+    int? categoryId,
+  }) async {
+    return await _makeRequest('GET', '/auth/admin-products', queryParams: {
+      if (search != null) 'search': search,
+      if (categoryId != null) 'categoryId': categoryId.toString(),
+    });
   }
 
   /// Получить информацию об API

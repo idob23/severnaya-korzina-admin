@@ -1,11 +1,8 @@
-// lib/screens/add_product_screen.dart - УЛУЧШЕННАЯ ВЕРСИЯ С РЕАЛЬНЫМ ПАРСИНГОМ
+// lib/screens/add_product_screen.dart - ПОЛНЫЙ ФАЙЛ
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
-import 'dart:convert';
-import 'package:csv/csv.dart';
 import '../services/admin_api_service.dart';
 
 class AddProductScreen extends StatefulWidget {
@@ -15,25 +12,28 @@ class AddProductScreen extends StatefulWidget {
 
 class _AddProductScreenState extends State<AddProductScreen> {
   final AdminApiService _apiService = AdminApiService();
-  final ImagePicker _imagePicker = ImagePicker();
 
-  // Состояние экрана
+  // Состояние
   bool _isLoading = false;
+  bool _isLoadingProducts = true;
   String? _error;
 
-  // Данные загруженного файла
+  // Данные
   PlatformFile? _selectedFile;
-  List<XFile> _selectedImages = [];
   List<Map<String, dynamic>> _parsedItems = [];
-  bool _isFileProcessed = false;
-
-  // Список категорий для сопоставления
+  List<Map<String, dynamic>> _existingProducts = [];
   List<Map<String, dynamic>> _categories = [];
+  int? _selectedCategoryFilter;
 
   @override
   void initState() {
     super.initState();
-    _loadCategories();
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    await _loadCategories();
+    await _loadExistingProducts();
   }
 
   Future<void> _loadCategories() async {
@@ -43,9 +43,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
         _categories =
             List<Map<String, dynamic>>.from(response['categories'] ?? []);
       });
+      print('Категории загружены: ${_categories.length}');
     } catch (e) {
       print('Ошибка загрузки категорий: $e');
-      // Добавляем дефолтные категории если API недоступно
+      // Используем дефолтные если не удалось загрузить
       setState(() {
         _categories = [
           {'id': 1, 'name': 'Молочные продукты'},
@@ -53,859 +54,805 @@ class _AddProductScreenState extends State<AddProductScreen> {
           {'id': 3, 'name': 'Овощи и фрукты'},
           {'id': 4, 'name': 'Хлебобулочные изделия'},
           {'id': 5, 'name': 'Напитки'},
-          {'id': 6, 'name': 'Замороженные продукты'},
-          {'id': 7, 'name': 'Бакалея'},
+          {'id': 6, 'name': 'Бакалея'},
         ];
       });
     }
   }
 
-  Future<void> _pickFile() async {
+  Future<void> _loadExistingProducts() async {
+    setState(() {
+      _isLoadingProducts = true;
+    });
+
     try {
+      // Используем существующий метод getProducts
+      final response = await _apiService.getProducts();
+      print('Товары загружены: ${response['products']?.length ?? 0}');
+
+      setState(() {
+        _existingProducts =
+            List<Map<String, dynamic>>.from(response['products'] ?? []);
+        _isLoadingProducts = false;
+      });
+    } catch (e) {
+      print('Ошибка загрузки товаров: $e');
+      setState(() {
+        _isLoadingProducts = false;
+      });
+    }
+  }
+
+  Future<void> _pickAndProcessFile() async {
+    try {
+      print('Выбираем файл...');
+
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['xlsx', 'xls', 'csv', 'txt'],
+        allowedExtensions: ['csv', 'txt'],
         allowMultiple: false,
       );
 
       if (result != null && result.files.isNotEmpty) {
         setState(() {
           _selectedFile = result.files.first;
-          _selectedImages = [];
-          _isFileProcessed = false;
-          _parsedItems = [];
+          _isLoading = true;
           _error = null;
         });
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Ошибка выбора файла: $e';
-      });
-    }
-  }
 
-  Future<void> _pickImagesFromGallery() async {
-    try {
-      final List<XFile> images = await _imagePicker.pickMultiImage();
+        print('Файл выбран: ${_selectedFile!.name}');
+        print('Путь к файлу: ${_selectedFile!.path}');
 
-      if (images.isNotEmpty) {
-        setState(() {
-          _selectedImages = images;
-          _selectedFile = null;
-          _isFileProcessed = false;
-          _parsedItems = [];
-          _error = null;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Ошибка выбора фотографий: $e';
-      });
-    }
-  }
+        // Отправляем файл на сервер для парсинга
+        try {
+          final response =
+              await _apiService.parseProductFile(_selectedFile!.path!);
+          print('Ответ сервера: $response');
 
-  Future<void> _takePhoto() async {
-    try {
-      final cameraStatus = await Permission.camera.request();
-      if (!cameraStatus.isGranted) {
-        setState(() {
-          _error = 'Необходимо разрешение на использование камеры';
-        });
-        return;
-      }
+          setState(() {
+            _parsedItems =
+                List<Map<String, dynamic>>.from(response['items'] ?? []);
+            _isLoading = false;
+          });
 
-      final XFile? photo = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 80,
-      );
-
-      if (photo != null) {
-        setState(() {
-          _selectedImages = [photo];
-          _selectedFile = null;
-          _isFileProcessed = false;
-          _parsedItems = [];
-          _error = null;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Ошибка съемки: $e';
-      });
-    }
-  }
-
-  void _showImageSourceDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Выберите источник'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(Icons.camera_alt),
-              title: Text('Камера'),
-              onTap: () {
-                Navigator.pop(context);
-                _takePhoto();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.photo_library),
-              title: Text('Галерея'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImagesFromGallery();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // РЕАЛЬНЫЙ ПАРСИНГ ФАЙЛОВ
-  Future<void> _processFile() async {
-    if (_selectedFile == null && _selectedImages.isEmpty) return;
-
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      List<Map<String, dynamic>> items = [];
-
-      if (_selectedFile != null) {
-        // Обрабатываем файл
-        items = await _parseFile(_selectedFile!);
-      } else if (_selectedImages.isNotEmpty) {
-        // Обрабатываем изображения (OCR заглушка)
-        items = await _parseImages(_selectedImages);
-      }
-
-      // Обогащаем данные предложенными категориями
-      final enrichedItems = _enrichWithCategories(items);
-
-      setState(() {
-        _parsedItems = enrichedItems;
-        _isFileProcessed = true;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = 'Ошибка обработки: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
-  // Парсинг файлов
-  Future<List<Map<String, dynamic>>> _parseFile(PlatformFile file) async {
-    final fileName = file.name.toLowerCase();
-
-    if (fileName.endsWith('.csv')) {
-      return await _parseCsvFile(file);
-    } else if (fileName.endsWith('.txt')) {
-      return await _parseTextFile(file);
-    } else {
-      throw Exception('Формат файла не поддерживается');
-    }
-  }
-
-  // Парсинг CSV файлов
-  Future<List<Map<String, dynamic>>> _parseCsvFile(PlatformFile file) async {
-    final bytes = file.bytes!;
-    final content = utf8.decode(bytes);
-
-    // Пытаемся определить разделитель
-    String delimiter = ',';
-    if (content.contains(';')) delimiter = ';';
-    if (content.contains('\t')) delimiter = '\t';
-
-    final List<List<dynamic>> csvTable = CsvToListConverter(
-      fieldDelimiter: delimiter,
-      eol: '\n',
-    ).convert(content);
-
-    if (csvTable.length < 2) {
-      throw Exception('Файл должен содержать заголовки и данные');
-    }
-
-    final List<Map<String, dynamic>> items = [];
-    final headers = csvTable[0].map((e) => e.toString().toLowerCase()).toList();
-
-    for (int i = 1; i < csvTable.length; i++) {
-      final row = csvTable[i];
-      if (row.isEmpty) continue;
-
-      final item = _parseRowToItem(headers, row);
-      if (item != null) {
-        items.add(item);
-      }
-    }
-
-    return items;
-  }
-
-  // Парсинг текстовых файлов
-  Future<List<Map<String, dynamic>>> _parseTextFile(PlatformFile file) async {
-    final bytes = file.bytes!;
-    final content = utf8.decode(bytes);
-    final lines = content.split('\n');
-
-    final List<Map<String, dynamic>> items = [];
-
-    for (final line in lines) {
-      if (line.trim().isEmpty) continue;
-
-      // Пытаемся распознать структуру строки
-      final item = _parseTextLineToItem(line.trim());
-      if (item != null) {
-        items.add(item);
-      }
-    }
-
-    return items;
-  }
-
-  // Преобразование строки CSV в товар
-  Map<String, dynamic>? _parseRowToItem(
-      List<String> headers, List<dynamic> row) {
-    try {
-      Map<String, dynamic> rowData = {};
-
-      for (int i = 0; i < headers.length && i < row.length; i++) {
-        rowData[headers[i]] = row[i]?.toString() ?? '';
-      }
-
-      // Ищем поля с названием товара
-      String? name = _findField(
-          rowData, ['название', 'товар', 'продукт', 'name', 'product']);
-      if (name == null || name.trim().isEmpty) return null;
-
-      // Ищем цену
-      double? price =
-          _findPriceField(rowData, ['цена', 'стоимость', 'price', 'cost']);
-
-      // Ищем единицу измерения
-      String unit =
-          _findField(rowData, ['единица', 'ед', 'unit', 'ед.изм']) ?? 'шт';
-
-      // Ищем описание
-      String description =
-          _findField(rowData, ['описание', 'desc', 'description']) ?? '';
-
-      return {
-        'name': name.trim(),
-        'price': price ?? 0.0,
-        'unit': unit.trim(),
-        'description': description.trim(),
-        'source': 'CSV_PARSE',
-        'isApproved': false,
-      };
-    } catch (e) {
-      print('Ошибка парсинга строки: $e');
-      return null;
-    }
-  }
-
-  // Парсинг текстовой строки в товар
-  Map<String, dynamic>? _parseTextLineToItem(String line) {
-    try {
-      // Паттерны для распознавания
-      final patterns = [
-        // "Молоко 3.2% - 85 руб/л"
-        RegExp(r'^(.+?)\s*-\s*(\d+(?:\.\d+)?)\s*руб?(?:/(.+?))?$',
-            caseSensitive: false),
-        // "Хлеб белый 500г 45.50"
-        RegExp(r'^(.+?)\s+(\d+(?:\.\d+)?)\s*$'),
-        // "Яблоки (кг) - 120.00"
-        RegExp(r'^(.+?)\s*\((.+?)\)\s*-\s*(\d+(?:\.\d+)?)$',
-            caseSensitive: false),
-      ];
-
-      for (final pattern in patterns) {
-        final match = pattern.firstMatch(line);
-        if (match != null) {
-          String name = match.group(1)?.trim() ?? '';
-          String priceStr = match.group(2) ?? '0';
-          String unit = match.group(3)?.trim() ?? 'шт';
-
-          if (name.isNotEmpty) {
-            return {
-              'name': name,
-              'price': double.tryParse(priceStr) ?? 0.0,
-              'unit': unit.isEmpty ? 'шт' : unit,
-              'description': '',
-              'source': 'TEXT_PARSE',
-              'isApproved': false,
-            };
-          }
+          print('Распарсено товаров: ${_parsedItems.length}');
+        } catch (e) {
+          print('Ошибка при отправке на сервер: $e');
+          setState(() {
+            _error = 'Ошибка обработки файла';
+            _isLoading = false;
+          });
         }
       }
-
-      // Если паттерны не сработали, создаем базовый товар
-      if (line.length > 3) {
-        return {
-          'name': line,
-          'price': 0.0,
-          'unit': 'шт',
-          'description': '',
-          'source': 'TEXT_PARSE',
-          'isApproved': false,
-        };
-      }
-
-      return null;
     } catch (e) {
-      print('Ошибка парсинга текста: $e');
-      return null;
+      print('Общая ошибка выбора файла: $e');
+      setState(() {
+        _error = 'Ошибка выбора файла: $e';
+        _isLoading = false;
+      });
     }
   }
 
-  // Заглушка для OCR изображений
-  Future<List<Map<String, dynamic>>> _parseImages(List<XFile> images) async {
-    // Симуляция OCR обработки
-    await Future.delayed(Duration(seconds: 2));
-
-    return [
-      {
-        'name': 'Товар из изображения #1',
-        'price': 150.0,
-        'unit': 'шт',
-        'description': 'Распознано с изображения',
-        'source': 'OCR_PARSE',
-        'isApproved': false,
-      },
-      {
-        'name': 'Товар из изображения #2',
-        'price': 250.0,
-        'unit': 'кг',
-        'description': 'Распознано с изображения',
-        'source': 'OCR_PARSE',
-        'isApproved': false,
-      },
-    ];
-  }
-
-  // Обогащение данных категориями
-  List<Map<String, dynamic>> _enrichWithCategories(
-      List<Map<String, dynamic>> items) {
-    return items.map((item) {
-      final category = _suggestCategory(item['name']);
-      return {
-        ...item,
-        'suggestedCategory': category['name'],
-        'suggestedCategoryId': category['id'],
-        'categoryConfidence': category['confidence'],
-      };
+  List<Map<String, dynamic>> get _filteredProducts {
+    if (_selectedCategoryFilter == null) {
+      return _existingProducts;
+    }
+    return _existingProducts.where((product) {
+      return product['category']?['id'] == _selectedCategoryFilter;
     }).toList();
   }
 
-  // Предложение категории на основе названия товара
-  Map<String, dynamic> _suggestCategory(String productName) {
-    final name = productName.toLowerCase();
-
-    // Простые правила для определения категории
-    if (name.contains('молоко') ||
-        name.contains('сыр') ||
-        name.contains('творог') ||
-        name.contains('кефир') ||
-        name.contains('йогурт')) {
-      return {'id': 1, 'name': 'Молочные продукты', 'confidence': 0.9};
-    }
-
-    if (name.contains('мясо') ||
-        name.contains('курица') ||
-        name.contains('говядина') ||
-        name.contains('свинина') ||
-        name.contains('колбаса')) {
-      return {'id': 2, 'name': 'Мясо и птица', 'confidence': 0.9};
-    }
-
-    if (name.contains('яблок') ||
-        name.contains('банан') ||
-        name.contains('морковь') ||
-        name.contains('картофель') ||
-        name.contains('овощ') ||
-        name.contains('фрукт')) {
-      return {'id': 3, 'name': 'Овощи и фрукты', 'confidence': 0.8};
-    }
-
-    if (name.contains('хлеб') ||
-        name.contains('батон') ||
-        name.contains('булочка')) {
-      return {'id': 4, 'name': 'Хлебобулочные изделия', 'confidence': 0.9};
-    }
-
-    if (name.contains('вода') ||
-        name.contains('сок') ||
-        name.contains('напиток') ||
-        name.contains('чай') ||
-        name.contains('кофе')) {
-      return {'id': 5, 'name': 'Напитки', 'confidence': 0.8};
-    }
-
-    // По умолчанию - бакалея
-    return {'id': 7, 'name': 'Бакалея', 'confidence': 0.3};
-  }
-
-  // Поиск поля в данных строки
-  String? _findField(Map<String, dynamic> data, List<String> possibleNames) {
-    for (final key in data.keys) {
-      for (final name in possibleNames) {
-        if (key.contains(name)) {
-          final value = data[key]?.toString();
-          if (value != null && value.trim().isNotEmpty) {
-            return value;
-          }
-        }
-      }
-    }
-    return null;
-  }
-
-  // Поиск поля с ценой
-  double? _findPriceField(
-      Map<String, dynamic> data, List<String> possibleNames) {
-    for (final key in data.keys) {
-      for (final name in possibleNames) {
-        if (key.contains(name)) {
-          final value = data[key]?.toString();
-          if (value != null) {
-            // Очищаем от лишних символов и пытаемся парсить
-            final cleanValue =
-                value.replaceAll(RegExp(r'[^\d.,]'), '').replaceAll(',', '.');
-            return double.tryParse(cleanValue);
-          }
-        }
-      }
-    }
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Добавление товаров'),
-        backgroundColor: Colors.blue[800],
-        foregroundColor: Colors.white,
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Инструкция
-            Card(
-              color: Colors.blue[50],
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.info, color: Colors.blue[600]),
-                        SizedBox(width: 8),
-                        Text(
-                          'Инструкция',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[800],
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      '1. Выберите файл (CSV, TXT) или сфотографируйте прайс-лист\n'
-                      '2. Нажмите "Обработать" для автоматического парсинга\n'
-                      '3. Проверьте и откорректируйте предложенные категории\n'
-                      '4. Подтвердите добавление товаров в базу данных',
-                      style: TextStyle(color: Colors.blue[700]),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            SizedBox(height: 24),
-
-            // Шаг 1: Выбор файла
-            _buildFileSelectionSection(),
-
-            if (_selectedFile != null) ...[
-              SizedBox(height: 24),
-              _buildFileInfoSection(),
-            ],
-
-            if (_selectedImages.isNotEmpty) ...[
-              SizedBox(height: 24),
-              _buildImagesInfoSection(),
-            ],
-
-            if ((_selectedFile != null || _selectedImages.isNotEmpty) &&
-                !_isFileProcessed) ...[
-              SizedBox(height: 24),
-              _buildProcessButton(),
-            ],
-
-            if (_isFileProcessed && _parsedItems.isNotEmpty) ...[
-              SizedBox(height: 24),
-              _buildParsedItemsSection(),
-            ],
-
-            if (_error != null) ...[
-              SizedBox(height: 16),
-              _buildErrorSection(),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFileSelectionSection() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Шаг 1: Выбор источника данных',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _pickFile,
-                    icon: Icon(Icons.attach_file),
-                    label: Text('Выбрать файл'),
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _showImageSourceDialog,
-                    icon: Icon(Icons.camera_alt),
-                    label: Text('Фото/Скан'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green[600],
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 16),
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Поддерживаемые форматы:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 4),
-                  Text('• CSV - файлы с разделителями (;, ,, tab)'),
-                  Text('• TXT - текстовые прайс-листы'),
-                  Text('• Фото - изображения прайсов (OCR)'),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFileInfoSection() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.insert_drive_file, color: Colors.blue),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _selectedFile!.name,
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 8),
-            Text(
-                'Размер: ${(_selectedFile!.size / 1024).toStringAsFixed(1)} KB'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildImagesInfoSection() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Выбранные изображения: ${_selectedImages.length}',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Container(
-              height: 100,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _selectedImages.length,
-                itemBuilder: (context, index) {
-                  return Container(
-                    margin: EdgeInsets.only(right: 8),
-                    width: 80,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        File(_selectedImages[index].path),
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProcessButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _processFile,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green[600],
-          foregroundColor: Colors.white,
-          padding: EdgeInsets.symmetric(vertical: 16),
-        ),
-        child: _isLoading
-            ? Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                  SizedBox(width: 12),
-                  Text('Обрабатываем...'),
-                ],
-              )
-            : Text(
-                'Обработать файл',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildParsedItemsSection() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Шаг 2: Проверьте распознанные товары (${_parsedItems.length})',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 16),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
-              itemCount: _parsedItems.length,
-              itemBuilder: (context, index) {
-                final item = _parsedItems[index];
-                return Card(
-                  margin: EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor:
-                          item['isApproved'] ? Colors.green : Colors.orange,
-                      child: Icon(
-                        item['isApproved'] ? Icons.check : Icons.warning,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    title: Text(item['name']),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${item['price']} ₽ за ${item['unit']}'),
-                        Text(
-                          'Категория: ${item['suggestedCategory']}',
-                          style: TextStyle(color: Colors.blue),
-                        ),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () => _editItem(index),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => _removeItem(index),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-            SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _parsedItems.isEmpty ? null : _approveAllItems,
-                    child: Text('Подтвердить все'),
-                  ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _parsedItems.isEmpty ? null : _saveToDatabase,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green[600],
-                      foregroundColor: Colors.white,
-                    ),
-                    child: Text('Сохранить в БД'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorSection() {
-    return Card(
-      color: Colors.red[50],
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(Icons.error, color: Colors.red),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                _error!,
-                style: TextStyle(color: Colors.red[700]),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _editItem(int index) {
-    // TODO: Открыть диалог редактирования товара
+    final item = _parsedItems[index];
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Редактирование товара'),
-        content: Text('Функция будет реализована в следующей версии'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          ),
-        ],
+      builder: (context) => ProductEditDialog(
+        product: item,
+        categories: _categories,
+        onSave: (updatedProduct) {
+          setState(() {
+            _parsedItems[index] = updatedProduct;
+          });
+        },
+        onCategoriesUpdated: () async {
+          await _loadCategories(); // Ждем загрузки категорий
+        },
       ),
     );
   }
 
-  void _removeItem(int index) {
-    setState(() {
-      _parsedItems.removeAt(index);
-    });
-  }
+  void _addToDatabase(Map<String, dynamic> item) async {
+    // Проверяем что категория выбрана
+    if (item['suggestedCategoryId'] == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Сначала выберите категорию для товара'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      _editItem(_parsedItems.indexOf(item)); // Открываем диалог редактирования
+      return;
+    }
 
-  void _approveAllItems() {
-    setState(() {
-      for (var item in _parsedItems) {
-        item['isApproved'] = true;
+    try {
+      await _apiService.createProduct({
+        'name': item['name'],
+        'price': item['price'],
+        'unit': item['unit'],
+        'description': item['description'] ?? '',
+        'categoryId': item['suggestedCategoryId'],
+        'minQuantity': 1,
+      });
+
+      // Обновляем список товаров
+      await _loadExistingProducts();
+
+      // Убираем товар из списка для добавления
+      setState(() {
+        _parsedItems.removeWhere((p) => p['name'] == item['name']);
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Товар "${item['name']}" добавлен')),
+        );
       }
-    });
+    } catch (e) {
+      print('Ошибка добавления товара: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: проверьте данные товара'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
-  void _saveToDatabase() {
-    // TODO: Сохранить в базу данных через API
+  void _addAllToDatabase() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Сохранение товаров'),
-        content: Text(
-            '${_parsedItems.length} товаров будет добавлено в базу данных'),
+        title: Text('Добавить все товары?'),
+        content: Text('Будет добавлено ${_parsedItems.length} товаров'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Отмена'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              Navigator.pop(context); // Возврат к dashboard
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Товары успешно добавлены!')),
-              );
+
+              int successCount = 0;
+              int errorCount = 0;
+
+              for (var item in [..._parsedItems]) {
+                try {
+                  // Проверяем что categoryId существует
+                  final categoryExists = _categories
+                      .any((cat) => cat['id'] == item['suggestedCategoryId']);
+
+                  await _apiService.createProduct({
+                    'name': item['name'],
+                    'price': item['price'],
+                    'unit': item['unit'],
+                    'description': item['description'] ?? '',
+                    'categoryId':
+                        categoryExists ? item['suggestedCategoryId'] : null,
+                    'minQuantity': 1,
+                  });
+                  successCount++;
+                } catch (e) {
+                  print('Ошибка добавления товара ${item['name']}: $e');
+                  errorCount++;
+                }
+              }
+
+              // Обновляем список и очищаем импортированные только если были успешные
+              if (successCount > 0) {
+                await _loadExistingProducts();
+                setState(() {
+                  _parsedItems.clear();
+                });
+              }
+
+              if (mounted) {
+                // Проверяем что виджет еще существует
+                String message = successCount > 0
+                    ? 'Добавлено товаров: $successCount'
+                    : 'Не удалось добавить товары';
+
+                if (errorCount > 0) {
+                  message += ', ошибок: $errorCount';
+                }
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(message),
+                    backgroundColor:
+                        errorCount > 0 ? Colors.orange : Colors.green,
+                  ),
+                );
+              }
             },
-            child: Text('Сохранить'),
+            child: Text('Добавить'),
           ),
         ],
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Загрузка товаров'),
+        backgroundColor: Colors.blue[600],
+      ),
+      body: Row(
+        children: [
+          // Левая панель - загруженные товары
+          Expanded(
+            flex: 1,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Colors.grey[300]!),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Заголовок и кнопка загрузки
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    color: Colors.grey[100],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Новые товары от поставщика',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _pickAndProcessFile,
+                          icon: Icon(Icons.upload_file),
+                          label: Text('Загрузить файл (CSV/TXT)'),
+                        ),
+                        if (_selectedFile != null) ...[
+                          SizedBox(height: 8),
+                          Text(
+                            'Файл: ${_selectedFile!.name}',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                        if (_error != null) ...[
+                          SizedBox(height: 8),
+                          Container(
+                            padding: EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.red[50],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              _error!,
+                              style: TextStyle(color: Colors.red, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  // Список загруженных товаров
+                  Expanded(
+                    child: _isLoading
+                        ? Center(child: CircularProgressIndicator())
+                        : _parsedItems.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'Загрузите файл для начала работы',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: _parsedItems.length,
+                                itemBuilder: (context, index) {
+                                  final item = _parsedItems[index];
+                                  return Card(
+                                    margin: EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    child: ListTile(
+                                      title: Text(item['name'] ?? ''),
+                                      subtitle: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                              'Цена: ${item['price']} ₽ / ${item['unit']}'),
+                                          Container(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              item['suggestedCategoryName'] ??
+                                                  'Без категории',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: Icon(Icons.edit, size: 20),
+                                            onPressed: () => _editItem(index),
+                                          ),
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.add_circle,
+                                              color: Colors.green,
+                                              size: 20,
+                                            ),
+                                            onPressed: () =>
+                                                _addToDatabase(item),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+
+                  // Нижняя панель с действиями
+                  if (_parsedItems.isNotEmpty)
+                    Container(
+                      padding: EdgeInsets.all(16),
+                      color: Colors.grey[100],
+                      child: Row(
+                        children: [
+                          Text('Товаров: ${_parsedItems.length}'),
+                          Spacer(),
+                          ElevatedButton(
+                            onPressed: _addAllToDatabase,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                            ),
+                            child: Text('Добавить все'),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // Правая панель - существующие товары в БД
+          Expanded(
+            flex: 1,
+            child: Column(
+              children: [
+                // Заголовок
+                Container(
+                  padding: EdgeInsets.all(16),
+                  color: Colors.grey[100],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Товары в базе данных',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      // Фильтр по категории
+                      DropdownButtonFormField<int?>(
+                        value: _selectedCategoryFilter,
+                        decoration: InputDecoration(
+                          labelText: 'Фильтр по категории',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                        items: [
+                          DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Все категории'),
+                          ),
+                          ..._categories.map<DropdownMenuItem<int?>>(
+                              (cat) => DropdownMenuItem<int?>(
+                                    value: cat['id'] as int?,
+                                    child: Text(cat['name'] as String),
+                                  )),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedCategoryFilter = value;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Список существующих товаров
+                Expanded(
+                  child: _isLoadingProducts
+                      ? Center(child: CircularProgressIndicator())
+                      : _filteredProducts.isEmpty
+                          ? Center(
+                              child: Text(
+                                _selectedCategoryFilter != null
+                                    ? 'Нет товаров в выбранной категории'
+                                    : 'База данных пуста',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: _filteredProducts.length,
+                              itemBuilder: (context, index) {
+                                final product = _filteredProducts[index];
+                                return Card(
+                                  margin: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  color: Colors.green[50],
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: Colors.green[200],
+                                      child: Text(
+                                        '${product['id']}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    title: Text(product['name'] ?? ''),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                            'Цена: ${product['price']} ₽ / ${product['unit'] ?? 'шт'}'),
+                                        if (product['category'] != null)
+                                          Text(
+                                            product['category']['name'],
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.green[700],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+
+                // Информационная панель
+                Container(
+                  padding: EdgeInsets.all(12),
+                  color: Colors.green[100],
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.inventory, size: 16, color: Colors.green[700]),
+                      SizedBox(width: 8),
+                      Text(
+                        'Всего товаров в БД: ${_existingProducts.length}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ДИАЛОГ РЕДАКТИРОВАНИЯ ТОВАРА - отдельный класс в том же файле
+class ProductEditDialog extends StatefulWidget {
+  final Map<String, dynamic> product;
+  final List<Map<String, dynamic>> categories;
+  final Function(Map<String, dynamic>) onSave;
+  final Future<void> Function() onCategoriesUpdated;
+
+  const ProductEditDialog({
+    Key? key,
+    required this.product,
+    required this.categories,
+    required this.onSave,
+    required this.onCategoriesUpdated,
+  }) : super(key: key);
+
+  @override
+  _ProductEditDialogState createState() => _ProductEditDialogState();
+}
+
+class _ProductEditDialogState extends State<ProductEditDialog> {
+  final AdminApiService _apiService = AdminApiService();
+  late TextEditingController _nameController;
+  late TextEditingController _priceController;
+  late TextEditingController _unitController;
+  late TextEditingController _descriptionController;
+  int? _selectedCategoryId;
+  bool _isCreatingCategory = false;
+  final _formKey = GlobalKey<FormState>();
+  late List<Map<String, dynamic>> _localCategories;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.product['name']);
+    _priceController =
+        TextEditingController(text: widget.product['price'].toString());
+    _unitController = TextEditingController(text: widget.product['unit']);
+    _descriptionController =
+        TextEditingController(text: widget.product['description'] ?? '');
+    _selectedCategoryId = widget.product['suggestedCategoryId'];
+    _localCategories = List.from(widget.categories);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _priceController.dispose();
+    _unitController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _showCreateCategoryDialog() {
+    final categoryNameController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Создать новую категорию'),
+        content: TextField(
+          controller: categoryNameController,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'Название категории',
+            border: OutlineInputBorder(),
+            hintText: 'Например: Замороженные продукты',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final categoryName = categoryNameController.text.trim();
+              if (categoryName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Введите название категории')),
+                );
+                return;
+              }
+
+              Navigator.pop(context);
+              setState(() => _isCreatingCategory = true);
+
+              try {
+                final response = await _apiService.createCategory(categoryName);
+                final newCategory = response['category'];
+
+                // Обновляем список категорий в родительском виджете
+                await widget.onCategoriesUpdated();
+
+                // Добавляем новую категорию в локальный список
+                setState(() {
+                  _localCategories.add(newCategory);
+                  _selectedCategoryId = newCategory['id'];
+                  _isCreatingCategory = false;
+                });
+
+                // Безопасно показываем SnackBar
+                if (mounted) {
+                  final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
+                  if (scaffoldMessenger != null) {
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                          content: Text('Категория "$categoryName" создана')),
+                    );
+                  }
+                }
+              } catch (e) {
+                setState(() => _isCreatingCategory = false);
+                if (mounted) {
+                  final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
+                  if (scaffoldMessenger != null) {
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Ошибка создания категории'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            child: Text('Создать'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Редактирование товара'),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: 'Название',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Название обязательно';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 12),
+              TextFormField(
+                controller: _priceController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Цена',
+                  border: OutlineInputBorder(),
+                  suffixText: '₽',
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Цена обязательна';
+                  }
+                  if (double.tryParse(value) == null) {
+                    return 'Введите корректную цену';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 12),
+              TextFormField(
+                controller: _unitController,
+                decoration: InputDecoration(
+                  labelText: 'Единица измерения',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Единица измерения обязательна';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 12),
+              TextField(
+                controller: _descriptionController,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  labelText: 'Описание (необязательно)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedCategoryId,
+                      decoration: InputDecoration(
+                        labelText: 'Категория *',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _localCategories
+                          .map<DropdownMenuItem<int>>(
+                              (cat) => DropdownMenuItem<int>(
+                                    value: cat['id'] as int,
+                                    child: Text(cat['name'] as String),
+                                  ))
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedCategoryId = value;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null) {
+                          return 'Выберите категорию';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  IconButton(
+                    onPressed:
+                        _isCreatingCategory ? null : _showCreateCategoryDialog,
+                    icon: _isCreatingCategory
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(Icons.add_circle),
+                    tooltip: 'Создать категорию',
+                    color: Colors.blue,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Отмена'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            if (!_formKey.currentState!.validate()) {
+              return;
+            }
+
+            final updatedProduct = {
+              ...widget.product,
+              'name': _nameController.text.trim(),
+              'price': double.tryParse(_priceController.text) ?? 0,
+              'unit': _unitController.text.trim(),
+              'description': _descriptionController.text.trim(),
+              'suggestedCategoryId': _selectedCategoryId,
+            };
+            widget.onSave(updatedProduct);
+            Navigator.pop(context);
+          },
+          child: Text('Сохранить'),
+        ),
+      ],
     );
   }
 }
