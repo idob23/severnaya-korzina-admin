@@ -24,6 +24,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   List<Map<String, dynamic>> _existingProducts = [];
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryFilter;
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -134,12 +136,32 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   List<Map<String, dynamic>> get _filteredProducts {
-    if (_selectedCategoryFilter == null) {
-      return _existingProducts;
+    var filtered = _existingProducts;
+
+    // Фильтр по категории
+    if (_selectedCategoryFilter != null) {
+      filtered = filtered.where((product) {
+        return product['category']?['id'] == _selectedCategoryFilter;
+      }).toList();
     }
-    return _existingProducts.where((product) {
-      return product['category']?['id'] == _selectedCategoryFilter;
-    }).toList();
+
+    // Фильтр по поисковому запросу
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      filtered = filtered.where((product) {
+        final name = (product['name'] ?? '').toLowerCase();
+        final category = (product['category']?['name'] ?? '').toLowerCase();
+        return name.contains(query) || category.contains(query);
+      }).toList();
+    }
+
+    return filtered;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _editItem(int index) {
@@ -278,6 +300,99 @@ class _AddProductScreenState extends State<AddProductScreen> {
               }
             },
             child: Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteProduct(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить товар?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Вы действительно хотите удалить товар:'),
+            SizedBox(height: 8),
+            Text(
+              '"${product['name']}"',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Цена: ${product['price']} ₽ / ${product['unit'] ?? 'шт'}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            if (product['category'] != null)
+              Text(
+                'Категория: ${product['category']['name']}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning, color: Colors.orange[700], size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Это действие нельзя отменить!',
+                      style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+
+              try {
+                await _apiService.deleteProduct(product['id']);
+
+                // Обновляем список товаров
+                await _loadExistingProducts();
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Товар "${product['name']}" удален'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                print('Ошибка удаления товара: $e');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Ошибка удаления товара'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Удалить'),
           ),
         ],
       ),
@@ -464,6 +579,36 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         ),
                       ),
                       SizedBox(height: 12),
+                      // Поиск товаров
+                      TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          labelText: 'Поиск товаров',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.clear),
+                                  onPressed: () {
+                                    setState(() {
+                                      _searchController.clear();
+                                      _searchQuery = '';
+                                    });
+                                  },
+                                )
+                              : null,
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                        },
+                      ),
+                      SizedBox(height: 8),
                       // Фильтр по категории
                       DropdownButtonFormField<int?>(
                         value: _selectedCategoryFilter,
@@ -546,6 +691,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                             ),
                                           ),
                                       ],
+                                    ),
+                                    trailing: IconButton(
+                                      icon: Icon(Icons.delete,
+                                          color: Colors.red[400]),
+                                      onPressed: () => _deleteProduct(product),
                                     ),
                                   ),
                                 );
