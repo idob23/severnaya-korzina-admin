@@ -230,6 +230,14 @@ class AdminApiService {
     return await _makeRequest('DELETE', '/admin/products/$productId');
   }
 
+  /// Обновить название закупки
+  Future<Map<String, dynamic>> updateBatchTitle(
+      int batchId, String newTitle) async {
+    return await _makeRequest('PUT', '/batches/$batchId/title', body: {
+      'title': newTitle,
+    });
+  }
+
   // Загрузить файл товаров от поставщика
   Future<Map<String, dynamic>> uploadProductFile(String filePath) async {
     // TODO: Реализовать загрузку файла

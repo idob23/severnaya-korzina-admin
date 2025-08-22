@@ -1006,3 +1006,4 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
     );
   }
 }
+
