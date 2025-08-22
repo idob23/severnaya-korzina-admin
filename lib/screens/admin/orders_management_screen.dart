@@ -1,7 +1,9 @@
-// lib/screens/admin/orders_management_screen.dart - ПОЛНАЯ ВЕРСИЯ
+// lib/screens/admin/orders_management_screen.dart - ИСПРАВЛЕННАЯ ВЕРСИЯ
+// Убираем confirmed, импортируем константы
 
 import 'package:flutter/material.dart';
 import '../../services/admin_api_service.dart';
+import '../../constants/order_status.dart'; // ← ИМПОРТИРУЕМ КОНСТАНТЫ
 
 class OrdersManagementScreen extends StatefulWidget {
   @override
@@ -120,225 +122,134 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Управление заказами'),
-        backgroundColor: Colors.blue[800],
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: _loadData,
-          ),
-        ],
-      ),
       body: Column(
         children: [
-          // Информационная панель о текущей закупке
-          if (_activeBatch != null) _buildBatchInfoCard(),
+          // Информационная панель
+          if (_activeBatch != null) _buildActiveBatchPanel(),
 
-          // Фильтры заказов
-          _buildFiltersBar(),
+          // Фильтры
+          _buildFilters(),
 
           // Список заказов
-          Expanded(child: _buildOrdersList()),
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _buildErrorWidget()
+                    : _buildOrdersList(),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildBatchInfoCard() {
-    if (_activeBatch == null) return SizedBox.shrink();
-
-    final batch = _activeBatch!;
-    final currentBatchOrders =
-        _orders.where((order) => order['batchId'] == batch['id']).length;
-
+  Widget _buildActiveBatchPanel() {
     return Container(
       margin: EdgeInsets.all(16),
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.green[50],
+        color: Colors.blue[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.green[300]!),
+        border: Border.all(color: Colors.blue[200]!),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.shopping_cart, color: Colors.green[700]),
+              Icon(Icons.shopping_cart, color: Colors.blue[700]),
               SizedBox(width: 8),
               Expanded(
                 child: _isEditingTitle
-                    ? _buildTitleEditor()
-                    : _buildTitleDisplay(),
+                    ? TextField(
+                        controller: _titleController,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        onSubmitted: _saveTitle,
+                      )
+                    : GestureDetector(
+                        onTap: _startEditingTitle,
+                        child: Text(
+                          '${_safeString(_activeBatch!['title'])}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.blue[800],
+                          ),
+                        ),
+                      ),
               ),
-              // Кнопка редактирования
-              IconButton(
-                icon: Icon(
-                  _isEditingTitle ? Icons.check : Icons.edit,
-                  color: Colors.green[700],
-                  size: 20,
-                ),
-                onPressed:
-                    _isEditingTitle ? _saveBatchTitle : _startEditingTitle,
-                tooltip: _isEditingTitle ? 'Сохранить' : 'Изменить название',
-              ),
-              if (_isEditingTitle)
+              if (_isEditingTitle) ...[
                 IconButton(
-                  icon: Icon(Icons.close, color: Colors.red[700], size: 20),
-                  onPressed: _cancelEditingTitle,
-                  tooltip: 'Отмена',
+                  icon: Icon(Icons.check, color: Colors.green),
+                  onPressed: () => _saveTitle(_titleController.text),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, color: Colors.red),
+                  onPressed: _cancelEditing,
+                ),
+              ] else
+                IconButton(
+                  icon: Icon(Icons.edit, color: Colors.blue[700]),
+                  onPressed: _startEditingTitle,
                 ),
             ],
           ),
           SizedBox(height: 8),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Заказов в текущей закупке: $currentBatchOrders',
-                style: TextStyle(color: Colors.green[700]),
+              Expanded(
+                child: Text(
+                  'Собрано: ${_safeDouble(_activeBatch!['currentAmount']).toStringAsFixed(0)}₽ из ${_safeDouble(_activeBatch!['targetAmount']).toStringAsFixed(0)}₽',
+                  style: TextStyle(color: Colors.blue[700]),
+                ),
               ),
               Text(
-                'Статус: ${_getStatusText(_safeString(batch['status'], 'unknown'))}',
+                '${_safeDouble(_activeBatch!['progressPercent']).toStringAsFixed(1)}%',
                 style: TextStyle(
-                  color: Colors.green[700],
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[700],
                 ),
               ),
             ],
           ),
-          SizedBox(height: 4),
-          Text(
-            'Цель: ${_safeDouble(batch['targetAmount']).toStringAsFixed(0)}₽ | '
-            'Текущее: ${_safeDouble(batch['currentAmount']).toStringAsFixed(0)}₽ | '
-            'Прогресс: ${_safeInt(batch['progressPercent'])}%',
-            style: TextStyle(color: Colors.green[600], fontSize: 12),
+          SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: _safeDouble(_activeBatch!['progressPercent']) / 100,
+            backgroundColor: Colors.blue[100],
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[600]!),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTitleDisplay() {
-    return Text(
-      'Текущая закупка: ${_safeString(_activeBatch!['title'], 'Без названия')}',
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-        color: Colors.green[800],
-      ),
-    );
-  }
-
-  Widget _buildTitleEditor() {
-    return TextField(
-      controller: _titleController,
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-        color: Colors.green[800],
-      ),
-      decoration: InputDecoration(
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.green[300]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.green[700]!, width: 2),
-        ),
-      ),
-      maxLines: 1,
-      autofocus: true,
-    );
-  }
-
-  void _startEditingTitle() {
-    setState(() {
-      _isEditingTitle = true;
-      _titleController.text = _safeString(_activeBatch!['title'], '');
-    });
-  }
-
-  void _cancelEditingTitle() {
-    setState(() {
-      _isEditingTitle = false;
-      _titleController.clear();
-    });
-  }
-
-  Future<void> _saveBatchTitle() async {
-    final newTitle = _titleController.text.trim();
-
-    if (newTitle.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Название не может быть пустым'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    try {
-      // Вызов API для обновления названия
-      final response =
-          await _apiService.updateBatchTitle(_activeBatch!['id'], newTitle);
-
-      if (response['success'] == true) {
-        setState(() {
-          _activeBatch!['title'] = newTitle;
-          _isEditingTitle = false;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Название закупки обновлено'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        throw Exception(response['error'] ?? 'Неизвестная ошибка');
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Ошибка обновления: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  Widget _buildFiltersBar() {
-    final activeBatchId = _activeBatch?['id'];
-    final currentBatchCount = activeBatchId != null
-        ? _orders.where((o) => o['batchId'] == activeBatchId).length
-        : 0;
-    final noBatchCount = _orders.where((o) => o['batchId'] == null).length;
-
+  Widget _buildFilters() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          Text('Фильтр: ', style: TextStyle(fontWeight: FontWeight.w500)),
-          SizedBox(width: 8),
+          Text(
+            'Фильтр:',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          SizedBox(width: 16),
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _buildFilterChip('all', 'Все заказы', _orders.length),
+                  _buildFilterChip('all', 'Все заказы'),
                   SizedBox(width: 8),
-                  if (_activeBatch != null)
-                    _buildFilterChip(
-                        'current_batch', 'Текущая закупка', currentBatchCount),
+                  _buildFilterChip('current_batch', 'Текущая закупка'),
                   SizedBox(width: 8),
-                  _buildFilterChip('no_batch', 'Без закупки', noBatchCount),
+                  _buildFilterChip('no_batch', 'Без закупки'),
                 ],
               ),
             ),
@@ -348,55 +259,40 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
     );
   }
 
-  Widget _buildFilterChip(String value, String label, int count) {
+  Widget _buildFilterChip(String value, String label) {
     final isSelected = _selectedFilter == value;
     return FilterChip(
-      label: Text('$label ($count)'),
+      label: Text(label),
       selected: isSelected,
       onSelected: (selected) {
         setState(() {
           _selectedFilter = value;
         });
       },
-      selectedColor: Colors.blue[100],
-      backgroundColor: Colors.grey[100],
+      backgroundColor: isSelected ? Colors.blue[100] : null,
+      selectedColor: Colors.blue[200],
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error, size: 64, color: Colors.red),
+          SizedBox(height: 16),
+          Text(_error!),
+          SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadData,
+            child: Text('Повторить'),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildOrdersList() {
-    if (_isLoading) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Загружаем заказы...'),
-          ],
-        ),
-      );
-    }
-
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red),
-            SizedBox(height: 16),
-            Text('Ошибка загрузки', style: TextStyle(fontSize: 18)),
-            SizedBox(height: 8),
-            Text(_error!, textAlign: TextAlign.center),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadData,
-              child: Text('Повторить'),
-            ),
-          ],
-        ),
-      );
-    }
-
     final filteredOrders = _filteredOrders;
 
     if (filteredOrders.isEmpty) {
@@ -404,7 +300,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined, size: 64, color: Colors.grey),
+            Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey),
             SizedBox(height: 16),
             Text(
               _selectedFilter == 'current_batch'
@@ -486,7 +382,10 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
                     _safeString(user['firstName'], '?').isNotEmpty
                         ? _safeString(user['firstName'], '?')[0].toUpperCase()
                         : '?',
-                    style: TextStyle(color: Colors.blue[800]),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue[700],
+                    ),
                   ),
                 ),
                 SizedBox(width: 12),
@@ -495,11 +394,11 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${_safeString(user['firstName'], 'Без имени')} ${_safeString(user['lastName'], '')}',
+                        '${_safeString(user['firstName'], 'Имя')} ${_safeString(user['lastName'], '')}',
                         style: TextStyle(fontWeight: FontWeight.w500),
                       ),
                       Text(
-                        'Телефон: ${_safeString(user['phone'], 'Не указан')}',
+                        _safeString(user['phone'], 'Телефон не указан'),
                         style: TextStyle(color: Colors.grey[600], fontSize: 12),
                       ),
                     ],
@@ -510,7 +409,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
 
             SizedBox(height: 12),
 
-            // Информация о принадлежности к закупке
+            // Принадлежность к закупке
             if (batchId != null) ...[
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -618,39 +517,34 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
     );
   }
 
+  // ✅ ИСПРАВЛЕНО: Используем константы вместо дублирования
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending':
+    // Конвертируем строковые цвета в Color объекты
+    final colorName = statusColors[status.toLowerCase()] ?? 'grey';
+    switch (colorName) {
+      case 'orange':
         return Colors.orange;
-      case 'confirmed':
-        return Colors.blue;
-      case 'paid':
+      case 'green':
         return Colors.green;
-      case 'shipped':
-        return Colors.purple;
-      case 'delivered':
-        return Colors.green[700]!;
-      case 'cancelled':
+      case 'blue':
+        return Colors.blue;
+      case 'red':
         return Colors.red;
       default:
         return Colors.grey;
     }
   }
 
+  // ✅ ИСПРАВЛЕНО: Используем константы вместо дублирования
   String _getStatusText(String status) {
+    // Сначала пробуем найти в константах заказов
+    final orderStatus = statusTexts[status.toLowerCase()];
+    if (orderStatus != null) {
+      return orderStatus;
+    }
+
+    // Дополнительные статусы для партий (не заказов)
     switch (status.toLowerCase()) {
-      case 'pending':
-        return 'Ожидает';
-      case 'confirmed':
-        return 'Подтвержден';
-      case 'paid':
-        return 'Оплачен';
-      case 'shipped':
-        return 'Отправлен';
-      case 'delivered':
-        return 'Доставлен';
-      case 'cancelled':
-        return 'Отменен';
       case 'active':
         return 'Активная';
       case 'collecting':
@@ -671,6 +565,48 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
       return '${date.day}.${date.month}.${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
     } catch (e) {
       return dateStr;
+    }
+  }
+
+  // Методы для редактирования названия закупки
+  void _startEditingTitle() {
+    setState(() {
+      _isEditingTitle = true;
+      _titleController.text = _safeString(_activeBatch!['title']);
+    });
+  }
+
+  void _cancelEditing() {
+    setState(() {
+      _isEditingTitle = false;
+      _titleController.clear();
+    });
+  }
+
+  Future<void> _saveTitle(String newTitle) async {
+    if (newTitle.trim().isEmpty) return;
+
+    try {
+      await _apiService.updateBatchTitle(
+        _activeBatch!['id'],
+        newTitle.trim(),
+      );
+
+      setState(() {
+        _activeBatch!['title'] = newTitle.trim();
+        _isEditingTitle = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Название закупки обновлено')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Ошибка обновления: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 }

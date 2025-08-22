@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:severnaya_korzina_admin/screens/add_product_screen.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_api_service.dart';
+import '../../constants/order_status.dart';
+import 'admin/batch_details_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -807,7 +809,7 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
   }
 }
 
-/// Управление партиями - РЕАЛЬНЫЙ ФУНКЦИОНАЛ
+/// Управление партиями - РЕАЛЬНЫЙ ФУНКЦИОНАЛ С НАВИГАЦИЕЙ
 class _BatchesManagementScreen extends StatefulWidget {
   @override
   _BatchesManagementScreenState createState() =>
@@ -849,9 +851,8 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'active':
+      case 'collecting':
         return Colors.green;
-      case 'closed':
-        return Colors.orange;
       case 'completed':
         return Colors.blue;
       case 'cancelled':
@@ -865,8 +866,8 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
     switch (status.toLowerCase()) {
       case 'active':
         return 'Активна';
-      case 'closed':
-        return 'Закрыта';
+      case 'collecting':
+        return 'Сбор средств';
       case 'completed':
         return 'Завершена';
       case 'cancelled':
@@ -954,123 +955,259 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
       itemCount: _batches.length,
       itemBuilder: (context, index) {
         final batch = _batches[index];
-        return Card(
-          margin: EdgeInsets.only(bottom: 12),
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Заголовок партии
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        batch['title'] ?? 'Без названия',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _getStatusColor(batch['status']),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        _getStatusText(batch['status']),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+        return _buildBatchCard(batch);
+      },
+    );
+  }
 
-                if (batch['description'] != null) ...[
-                  SizedBox(height: 8),
-                  Text(
-                    batch['description'],
-                    style: TextStyle(color: Colors.grey[600]),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+  Widget _buildBatchCard(Map<String, dynamic> batch) {
+    // ✅ ИСПРАВЛЕНО: Правильно получаем данные из API
+    final targetAmount = _safeDouble(batch['targetAmount']);
+    final currentAmount = _safeDouble(batch['currentAmount']);
+    final progressPercent = _safeDouble(batch['progressPercent']);
+    final participantsCount = _safeInt(batch['participantsCount']);
+    final ordersCount = _safeInt(batch['ordersCount']);
+
+    return Card(
+      margin: EdgeInsets.only(bottom: 12),
+      elevation: 3,
+      child: InkWell(
+        onTap: () => _openBatchDetails(batch),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Заголовок партии
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      batch['title'] ?? 'Без названия',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(batch['status']),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _getStatusText(batch['status']),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
+              ),
 
-                SizedBox(height: 12),
+              if (batch['description'] != null) ...[
+                SizedBox(height: 8),
+                Text(
+                  batch['description'],
+                  style: TextStyle(color: Colors.grey[600]),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
 
-                // Информация о партии
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildInfoRow(Icons.people,
-                              'Участников: ${batch['participantsCount']}/${batch['minParticipants']}'),
-                          _buildInfoRow(Icons.shopping_bag,
-                              'Товаров: ${batch['productsCount']}'),
-                          _buildInfoRow(Icons.calendar_today,
-                              'Окончание: ${_formatDate(batch['endDate'])}'),
-                        ],
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+              SizedBox(height: 16),
+
+              // ✅ ИСПРАВЛЕНО: Показываем реальные данные
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Сумма:',
-                          style:
-                              TextStyle(fontSize: 12, color: Colors.grey[600]),
-                        ),
-                        Text(
-                          '${batch['totalValue']} ₽',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green[700],
-                          ),
-                        ),
+                        _buildInfoRow(
+                            Icons.people, 'Участников: $participantsCount'),
+                        _buildInfoRow(
+                            Icons.shopping_cart, 'Заказов: $ordersCount'),
+                        _buildInfoRow(Icons.account_balance_wallet,
+                            'Собрано: ${currentAmount.toStringAsFixed(0)}₽'),
+                        _buildInfoRow(Icons.flag,
+                            'Цель: ${targetAmount.toStringAsFixed(0)}₽'),
                       ],
                     ),
-                  ],
-                ),
+                  ),
 
-                // Прогресс-бар участников
-                if (batch['status'] == 'active') ...[
-                  SizedBox(height: 12),
+                  // Прогресс и индикатор
                   Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        'Прогресс набора участников',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        '${progressPercent.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: _getProgressColor(progressPercent),
+                        ),
                       ),
                       SizedBox(height: 4),
-                      LinearProgressIndicator(
-                        value: (batch['participantsCount'] /
-                                batch['minParticipants'])
-                            .clamp(0.0, 1.0),
-                        backgroundColor: Colors.grey[300],
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          batch['participantsCount'] >= batch['minParticipants']
-                              ? Colors.green
-                              : Colors.orange,
+                      Container(
+                        width: 80,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(3),
+                          color: Colors.grey[300],
+                        ),
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: (progressPercent / 100).clamp(0.0, 1.0),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(3),
+                              color: _getProgressColor(progressPercent),
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 8),
+
+                      // ✅ ДОБАВЛЕНО: Реальные индикаторы статусов заказов
+                      if (batch['orderStats'] != null)
+                        _buildRealOrderStatusIndicators(batch['orderStats']),
+                    ],
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 12),
+              Row(
+                children: [
+                  Spacer(),
+                  Row(
+                    children: [
+                      Icon(Icons.arrow_forward_ios,
+                          size: 16, color: Colors.grey[600]),
+                      SizedBox(width: 4),
+                      Text(
+                        'Подробнее',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
                         ),
                       ),
                     ],
                   ),
                 ],
-              ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+// ✅ НОВЫЙ МЕТОД: Реальные индикаторы статусов заказов
+  Widget _buildRealOrderStatusIndicators(Map<String, dynamic> orderStats) {
+    final pending = _safeInt(orderStats['pending']);
+    final paid = _safeInt(orderStats['paid']);
+    final shipped = _safeInt(orderStats['shipped']);
+    final delivered = _safeInt(orderStats['delivered']);
+    final cancelled = _safeInt(orderStats['cancelled']);
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        if (pending > 0) _buildStatusBadge(Colors.orange, 'Ожидают', pending),
+        if (paid > 0) _buildStatusBadge(Colors.green, 'Оплачены', paid),
+        if (shipped > 0) _buildStatusBadge(Colors.blue, 'Отправлены', shipped),
+        if (delivered > 0)
+          _buildStatusBadge(Colors.green[700]!, 'Доставлены', delivered),
+        if (cancelled > 0) _buildStatusBadge(Colors.red, 'Отменены', cancelled),
+      ],
+    );
+  }
+
+// ✅ НОВЫЙ МЕТОД: Бейдж со статусом и количеством
+  Widget _buildStatusBadge(Color color, String label, int count) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        border: Border.all(color: color.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
             ),
           ),
-        );
-      },
+          SizedBox(width: 4),
+          Text(
+            '$label ($count)',
+            style: TextStyle(
+              fontSize: 9,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _buildOrderStatusIndicator() {
+    // Простые индикаторы - будут улучшены после получения данных о заказах
+    return Row(
+      children: [
+        _buildStatusDot(Colors.orange, 'Ожидают'),
+        SizedBox(width: 8),
+        _buildStatusDot(Colors.green, 'Оплачены'),
+        SizedBox(width: 8),
+        _buildStatusDot(Colors.blue, 'Отправлены'),
+        SizedBox(width: 8),
+        _buildStatusDot(Colors.green[700]!, 'Доставлены'),
+      ],
+    );
+  }
+
+  Widget _buildStatusDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _getProgressColor(double progress) {
+    if (progress < 30) return Colors.red;
+    if (progress < 70) return Colors.orange;
+    if (progress < 90) return Colors.blue;
+    return Colors.green;
   }
 
   Widget _buildInfoRow(IconData icon, String text) {
@@ -1089,13 +1226,37 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
     );
   }
 
-  String _formatDate(String dateString) {
-    try {
-      final date = DateTime.parse(dateString);
-      return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
-    } catch (e) {
-      return dateString;
+  // ✅ КЛЮЧЕВОЙ МЕТОД - Навигация к детальному экрану
+  void _openBatchDetails(Map<String, dynamic> batch) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BatchDetailsScreen(batch: batch),
+      ),
+    );
+  }
+
+  // Вспомогательные методы
+  double _safeDouble(dynamic value, [double defaultValue = 0.0]) {
+    if (value == null) return defaultValue;
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      if (parsed != null) return parsed;
     }
+    return defaultValue;
+  }
+
+  int _safeInt(dynamic value, [int defaultValue = 0]) {
+    if (value == null) return defaultValue;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) {
+      final parsed = int.tryParse(value);
+      if (parsed != null) return parsed;
+    }
+    return defaultValue;
   }
 }
 
