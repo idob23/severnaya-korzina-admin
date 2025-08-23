@@ -516,8 +516,14 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
   }
 
   // Методы для управления статусами
+
   Future<void> _shipOrders() async {
     final paidOrders = _orders.where((o) => o['status'] == 'paid').length;
+
+    if (paidOrders == 0) {
+      _showSnackBar('Нет заказов для отправки');
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -542,14 +548,41 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
     );
 
     if (confirmed == true) {
-      // TODO: Реализовать API вызов для массового изменения статусов
-      _showSnackBar('Заказы отправлены! SMS уведомления отправлены.');
-      _loadBatchOrders(); // Перезагружаем данные
+      setState(() {
+        _isLoading = true;
+      });
+
+      try {
+        // Вызываем реальный API
+        final response = await _apiService.shipOrders(widget.batch['id']);
+
+        if (response['success'] == true) {
+          _showSnackBar(response['message'] ??
+              'Заказы отправлены! SMS уведомления отправлены.');
+          await _loadBatchOrders(); // Перезагружаем данные
+        } else {
+          _showSnackBar(response['message'] ?? 'Ошибка отправки заказов');
+        }
+      } catch (e) {
+        _showSnackBar('Ошибка: $e');
+        print('❌ Ошибка отправки заказов: $e');
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
+  // Заменить функцию _deliverOrders() в lib/screens/admin/batch_details_screen.dart
+
   Future<void> _deliverOrders() async {
     final shippedOrders = _orders.where((o) => o['status'] == 'shipped').length;
+
+    if (shippedOrders == 0) {
+      _showSnackBar('Нет заказов для доставки');
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -575,10 +608,29 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
     );
 
     if (confirmed == true) {
-      // TODO: Реализовать API вызов для массового изменения статусов
-      _showSnackBar(
-          'Заказы доставлены! Партия закрыта. SMS уведомления отправлены.');
-      _loadBatchOrders(); // Перезагружаем данные
+      setState(() {
+        _isLoading = true;
+      });
+
+      try {
+        // Вызываем реальный API
+        final response = await _apiService.deliverOrders(widget.batch['id']);
+
+        if (response['success'] == true) {
+          _showSnackBar(response['message'] ??
+              'Заказы доставлены! Партия закрыта. SMS уведомления отправлены.');
+          await _loadBatchOrders(); // Перезагружаем данные
+        } else {
+          _showSnackBar(response['message'] ?? 'Ошибка доставки заказов');
+        }
+      } catch (e) {
+        _showSnackBar('Ошибка: $e');
+        print('❌ Ошибка доставки заказов: $e');
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

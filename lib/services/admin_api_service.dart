@@ -296,6 +296,16 @@ class AdminApiService {
     });
   }
 
+  /// Отправить заказы (Машина уехала) - перевести paid → shipped
+  Future<Map<String, dynamic>> shipOrders(int batchId) async {
+    return await _makeRequest('POST', '/admin/batches/$batchId/ship-orders');
+  }
+
+  /// Доставить заказы (Машина приехала) - перевести shipped → delivered
+  Future<Map<String, dynamic>> deliverOrders(int batchId) async {
+    return await _makeRequest('POST', '/admin/batches/$batchId/deliver-orders');
+  }
+
   /// Начать сбор денег (создать или активировать партию)
   Future<Map<String, dynamic>> startMoneyCollection({
     required double targetAmount,
