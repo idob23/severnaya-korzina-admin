@@ -52,13 +52,18 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
       print('📦 Заказы получены: ${results[0]}');
       print('🛒 Активная закупка: ${results[1]}');
 
+      final batchData = results[1]['batch'];
+      print('🔍 Детали активной партии: $batchData');
+
       setState(() {
         _orders = _safeList(results[0]['orders']);
-        _activeBatch = _safeMap(results[1]['batch']);
+        _activeBatch = _safeMap(batchData); // Используем batchData напрямую
         _isLoading = false;
       });
 
       print('✅ Данные загружены. Заказов: ${_orders.length}');
+      print(
+          '✅ Активная партия: ${_activeBatch != null ? "есть (${_activeBatch!['title']})" : "нет"}');
     } catch (e) {
       print('❌ Ошибка загрузки: $e');
       setState(() {

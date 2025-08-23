@@ -523,6 +523,51 @@ class _UsersManagementScreenState extends State<_UsersManagementScreen> {
     );
   }
 
+  // Добавить этот метод в _UsersManagementScreenState:
+
+  Future<void> _deleteUser(Map<String, dynamic> user) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить пользователя?'),
+        content: Text(
+            'Пользователь "${user['firstName']} ${user['lastName']}" будет удален навсегда. Это действие нельзя отменить.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _apiService.deleteUser(user['id']);
+
+      setState(() {
+        _users.removeWhere((u) => u['id'] == user['id']);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ Пользователь удален')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Ошибка: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Widget _buildErrorWidget() {
     return Center(
       child: Column(
@@ -578,16 +623,31 @@ class _UsersManagementScreenState extends State<_UsersManagementScreen> {
                 if (user['email'] != null) Text('Email: ${user['email']}'),
               ],
             ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            trailing: Row(
+              // ✅ ИЗМЕНИТЬ trailing на Row
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  user['isActive'] == true ? Icons.check_circle : Icons.cancel,
-                  color: user['isActive'] == true ? Colors.green : Colors.red,
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      user['isActive'] == true
+                          ? Icons.check_circle
+                          : Icons.cancel,
+                      color:
+                          user['isActive'] == true ? Colors.green : Colors.red,
+                    ),
+                    Text(
+                      user['isActive'] == true ? 'Активен' : 'Заблокирован',
+                      style: TextStyle(fontSize: 10),
+                    ),
+                  ],
                 ),
-                Text(
-                  user['isActive'] == true ? 'Активен' : 'Заблокирован',
-                  style: TextStyle(fontSize: 10),
+                SizedBox(width: 8), // ✅ ДОБАВИТЬ КНОПКУ УДАЛЕНИЯ
+                IconButton(
+                  icon: Icon(Icons.delete, color: Colors.red, size: 20),
+                  onPressed: () => _deleteUser(user),
+                  tooltip: 'Удалить пользователя',
                 ),
               ],
             ),
@@ -822,10 +882,62 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
   bool _isLoading = true;
   String? _error;
 
+  // ✅ ДОБАВИТЬ ЭТИ ПЕРЕМЕННЫЕ:
+  int? _editingBatchId;
+  final TextEditingController _titleController = TextEditingController();
+
+  @override
+  void dispose() {
+    _titleController.dispose(); // ✅ ДОБАВИТЬ
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
     _loadBatches();
+  }
+
+  // ✅ ДОБАВИТЬ ЭТИ МЕТОДЫ:
+  void _startEditingTitle(Map<String, dynamic> batch) {
+    setState(() {
+      _editingBatchId = batch['id'];
+      _titleController.text = batch['title'] ?? '';
+    });
+  }
+
+  void _cancelEditing() {
+    setState(() {
+      _editingBatchId = null;
+      _titleController.clear();
+    });
+  }
+
+  Future<void> _saveTitle() async {
+    if (_editingBatchId == null) return;
+
+    try {
+      await _apiService.updateBatchTitle(
+          _editingBatchId!, _titleController.text.trim());
+
+      // Обновляем название в списке
+      setState(() {
+        final batchIndex =
+            _batches.indexWhere((b) => b['id'] == _editingBatchId);
+        if (batchIndex != -1) {
+          _batches[batchIndex]['title'] = _titleController.text.trim();
+        }
+        _editingBatchId = null;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ Название обновлено')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Ошибка: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _loadBatches() async {
@@ -845,6 +957,49 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
         _error = 'Ошибка загрузки: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _deleteBatch(Map<String, dynamic> batch) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить партию?'),
+        content: Text(
+            'Партия "${batch['title']}" будет удалена навсегда. Это действие нельзя отменить.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _apiService.deleteBatch(batch['id']);
+
+      setState(() {
+        _batches.removeWhere((b) => b['id'] == batch['id']);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ Партия удалена')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Ошибка: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -960,55 +1115,91 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
     );
   }
 
+  // Замените метод _buildBatchCard в _BatchesManagementScreenState:
+
   Widget _buildBatchCard(Map<String, dynamic> batch) {
-    // ✅ ИСПРАВЛЕНО: Правильно получаем данные из API
     final targetAmount = _safeDouble(batch['targetAmount']);
     final currentAmount = _safeDouble(batch['currentAmount']);
     final progressPercent = _safeDouble(batch['progressPercent']);
     final participantsCount = _safeInt(batch['participantsCount']);
     final ordersCount = _safeInt(batch['ordersCount']);
+    final isEditing = _editingBatchId == batch['id']; // ✅ ДОБАВИТЬ
 
     return Card(
       margin: EdgeInsets.only(bottom: 12),
       elevation: 3,
       child: InkWell(
-        onTap: () => _openBatchDetails(batch),
+        onTap: isEditing ? null : () => _openBatchDetails(batch), // ✅ ИЗМЕНИТЬ
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Заголовок партии
+              // ✅ ЗАМЕНИТЬ ЗАГОЛОВОК:
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      batch['title'] ?? 'Без названия',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                    child: isEditing
+                        ? TextField(
+                            controller: _titleController,
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(),
+                              contentPadding:
+                                  EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            onSubmitted: (_) => _saveTitle(),
+                          )
+                        : Text(
+                            batch['title'] ?? 'Без названия',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                  if (isEditing) ...[
+                    IconButton(
+                      icon: Icon(Icons.check, color: Colors.green),
+                      onPressed: _saveTitle,
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close, color: Colors.red),
+                      onPressed: _cancelEditing,
+                    ),
+                  ] else ...[
+                    IconButton(
+                      icon: Icon(Icons.edit, size: 20),
+                      onPressed: () => _startEditingTitle(batch),
+                      tooltip: 'Редактировать название',
+                    ),
+                    IconButton(
+                      // ✅ ДОБАВИТЬ ЭТУ КНОПКУ
+                      icon: Icon(Icons.delete, size: 20, color: Colors.red),
+                      onPressed: () => _deleteBatch(batch),
+                      tooltip: 'Удалить партию',
+                    ),
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(batch['status']),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _getStatusText(batch['status']),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(batch['status']),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getStatusText(batch['status']),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                  ],
                 ],
               ),
 
+              // ... остальная часть карточки остается без изменений
               if (batch['description'] != null) ...[
                 SizedBox(height: 8),
                 Text(
@@ -1021,7 +1212,6 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
 
               SizedBox(height: 16),
 
-              // ✅ ИСПРАВЛЕНО: Показываем реальные данные
               Row(
                 children: [
                   Expanded(
@@ -1039,62 +1229,22 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
                       ],
                     ),
                   ),
-
-                  // Прогресс и индикатор
+                  SizedBox(width: 16),
                   Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      CircularProgressIndicator(
+                        value: progressPercent / 100,
+                        backgroundColor: Colors.grey[300],
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            _getStatusColor(batch['status'])),
+                        strokeWidth: 8,
+                      ),
+                      SizedBox(height: 8),
                       Text(
                         '${progressPercent.toStringAsFixed(1)}%',
                         style: TextStyle(
-                          fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: _getProgressColor(progressPercent),
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Container(
-                        width: 80,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(3),
-                          color: Colors.grey[300],
-                        ),
-                        child: FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: (progressPercent / 100).clamp(0.0, 1.0),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(3),
-                              color: _getProgressColor(progressPercent),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 8),
-
-                      // ✅ ДОБАВЛЕНО: Реальные индикаторы статусов заказов
-                      if (batch['orderStats'] != null)
-                        _buildRealOrderStatusIndicators(batch['orderStats']),
-                    ],
-                  ),
-                ],
-              ),
-
-              SizedBox(height: 12),
-              Row(
-                children: [
-                  Spacer(),
-                  Row(
-                    children: [
-                      Icon(Icons.arrow_forward_ios,
-                          size: 16, color: Colors.grey[600]),
-                      SizedBox(width: 4),
-                      Text(
-                        'Подробнее',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
+                          color: _getStatusColor(batch['status']),
                         ),
                       ),
                     ],

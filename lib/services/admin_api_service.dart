@@ -146,6 +146,19 @@ class AdminApiService {
     return response;
   }
 
+  /// Удалить пользователя
+  Future<Map<String, dynamic>> deleteUser(int userId) async {
+    print('AdminAPI: Удаление пользователя $userId');
+    try {
+      final result = await _makeRequest('DELETE', '/auth/admin-users/$userId');
+      print('AdminAPI: Пользователь $userId удален');
+      return result;
+    } catch (e) {
+      print('AdminAPI: Ошибка удаления пользователя: $e');
+      rethrow;
+    }
+  }
+
   /// Получить профиль администратора
   Future<Map<String, dynamic>> getAdminProfile() async {
     return await _makeRequest('GET', '/auth/admin-profile');
@@ -296,6 +309,19 @@ class AdminApiService {
     });
   }
 
+  /// Удалить партию
+  Future<Map<String, dynamic>> deleteBatch(int batchId) async {
+    print('AdminAPI: Удаление партии $batchId');
+    try {
+      final result = await _makeRequest('DELETE', '/batches/$batchId');
+      print('AdminAPI: Партия $batchId удалена');
+      return result;
+    } catch (e) {
+      print('AdminAPI: Ошибка удаления партии: $e');
+      rethrow;
+    }
+  }
+
   /// Отправить заказы (Машина уехала) - перевести paid → shipped
   Future<Map<String, dynamic>> shipOrders(int batchId) async {
     return await _makeRequest('POST', '/admin/batches/$batchId/ship-orders');
@@ -324,7 +350,16 @@ class AdminApiService {
 
   /// Получить активную партию для информационной панели
   Future<Map<String, dynamic>> getActiveBatch() async {
-    return await _makeRequest('GET', '/batches/active');
+    print('AdminAPI: Запрос активной партии...');
+    try {
+      final result = await _makeRequest('GET', '/batches/active');
+      print('AdminAPI: Ответ активной партии: $result');
+      return result;
+    } catch (e) {
+      print('AdminAPI: Ошибка получения активной партии: $e');
+      // Возвращаем пустой результат вместо ошибки
+      return {'success': true, 'batch': null, 'message': 'Нет активных партий'};
+    }
   }
 
   // === ПРОВЕРКА ЗДОРОВЬЯ СЕРВЕРА ===
