@@ -458,6 +458,54 @@ class AdminApiService {
       throw Exception('Не удалось получить информацию об API: $e');
     }
   }
+
+  /// Получить статус оформления заказов
+  Future<Map<String, dynamic>> getCheckoutEnabled() async {
+    try {
+      print('AdminAPI: Получение статуса checkout...');
+
+      final result = await _makeRequest('GET', '/settings/checkout-enabled');
+
+      print('AdminAPI: Статус checkout получен: ${result['checkoutEnabled']}');
+      return result;
+    } catch (e) {
+      print('AdminAPI: Ошибка получения статуса checkout: $e');
+      // При ошибке возвращаем значение по умолчанию
+      return {
+        'success': false,
+        'checkoutEnabled': true, // По умолчанию разрешаем
+        'error': e.toString(),
+      };
+    }
+  }
+
+  /// Изменить статус оформления заказов
+  Future<Map<String, dynamic>> setCheckoutEnabled(bool enabled) async {
+    try {
+      print('AdminAPI: Изменение статуса checkout на $enabled...');
+
+      final result = await _makeRequest(
+        'PUT',
+        '/settings/checkout-enabled',
+        body: {
+          'enabled': enabled,
+        },
+      );
+
+      print('AdminAPI: Статус checkout изменен успешно');
+      return result;
+    } catch (e) {
+      print('AdminAPI: Ошибка изменения статуса checkout: $e');
+
+      // Если это ApiException, пробрасываем её дальше
+      if (e is ApiException) {
+        throw Exception(e.message);
+      }
+
+      // Для других ошибок
+      throw Exception('Не удалось изменить настройку: $e');
+    }
+  }
 }
 
 /// Исключение для ошибок API

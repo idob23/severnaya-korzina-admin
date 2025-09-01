@@ -1410,18 +1410,297 @@ class _BatchesManagementScreenState extends State<_BatchesManagementScreen> {
   }
 }
 
-class _SettingsScreen extends StatelessWidget {
+/// Экран настроек с управлением оформлением заказов
+class _SettingsScreen extends StatefulWidget {
+  @override
+  _SettingsScreenState createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<_SettingsScreen> {
+  final AdminApiService _apiService = AdminApiService();
+  bool _checkoutEnabled = true;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Получаем текущий статус с сервера
+      final response = await _apiService.getCheckoutEnabled();
+      if (mounted) {
+        setState(() {
+          _checkoutEnabled = response['checkoutEnabled'] ?? true;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Ошибка загрузки настроек: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleCheckout(bool value) async {
+    // Сразу меняем UI для отзывчивости
+    setState(() {
+      _checkoutEnabled = value;
+    });
+
+    try {
+      // Отправляем изменение на сервер
+      final response = await _apiService.setCheckoutEnabled(value);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? '✅ Оформление заказов включено'
+                  : '⛔ Оформление заказов выключено',
+              style: TextStyle(fontSize: 16),
+            ),
+            backgroundColor: value ? Colors.green : Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      // При ошибке откатываем изменение
+      if (mounted) {
+        setState(() {
+          _checkoutEnabled = !value;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Ошибка: не удалось изменить настройку'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.settings, size: 64, color: Colors.grey),
-          SizedBox(height: 16),
-          Text('Настройки'),
-          Text('Будет реализовано в следующей версии'),
-        ],
+    return Scaffold(
+      body: _isLoading
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Загрузка настроек...'),
+                ],
+              ),
+            )
+          : ListView(
+              padding: EdgeInsets.all(16),
+              children: [
+                // Заголовок
+                Padding(
+                  padding: EdgeInsets.only(bottom: 24),
+                  child: Text(
+                    'Настройки приложения',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+
+                // Карточка управления оформлением заказов
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Заголовок секции
+                        Row(
+                          children: [
+                            Icon(Icons.shopping_cart,
+                                color: Colors.blue[700], size: 28),
+                            SizedBox(width: 12),
+                            Text(
+                              'Управление заказами',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        SizedBox(height: 20),
+
+                        // Основной переключатель
+                        Container(
+                          padding: EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: _checkoutEnabled
+                                ? Colors.green[50]
+                                : Colors.red[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _checkoutEnabled
+                                  ? Colors.green[400]!
+                                  : Colors.red[400]!,
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              // Иконка статуса
+                              Container(
+                                padding: EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: _checkoutEnabled
+                                      ? Colors.green
+                                      : Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _checkoutEnabled
+                                      ? Icons.check_circle_outline
+                                      : Icons.block,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
+                              ),
+
+                              SizedBox(width: 16),
+
+                              // Текст статуса
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Оформление заказов',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      _checkoutEnabled
+                                          ? 'Пользователи могут оформлять заказы'
+                                          : 'Оформление заказов заблокировано',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // Переключатель
+                              Transform.scale(
+                                scale: 1.2,
+                                child: Switch(
+                                  value: _checkoutEnabled,
+                                  onChanged: _toggleCheckout,
+                                  activeColor: Colors.green,
+                                  inactiveThumbColor: Colors.red,
+                                  inactiveTrackColor: Colors.red[200],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        SizedBox(height: 16),
+
+                        // Информационная панель
+                        Container(
+                          padding: EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue[200]!),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.info_outline,
+                                  color: Colors.blue[700], size: 20),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Используйте этот переключатель для временной блокировки оформления новых заказов. Пользователи увидят уведомление в корзине.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.blue[900],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Дополнительная информационная карточка
+                SizedBox(height: 16),
+                Card(
+                  elevation: 2,
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Когда использовать блокировку:',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        _buildInfoRow('• При подготовке к отправке заказов'),
+                        _buildInfoRow('• Во время технических работ'),
+                        _buildInfoRow('• При обновлении каталога товаров'),
+                        _buildInfoRow('• В период инвентаризации'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildInfoRow(String text) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 14,
+          color: Colors.grey[700],
+        ),
       ),
     );
   }
