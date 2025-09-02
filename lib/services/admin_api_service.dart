@@ -313,7 +313,8 @@ class AdminApiService {
   Future<Map<String, dynamic>> deleteBatch(int batchId) async {
     print('AdminAPI: Удаление партии $batchId');
     try {
-      final result = await _makeRequest('DELETE', '/batches/$batchId');
+      // Исправляем путь с /batches/$batchId на /admin/batches/$batchId
+      final result = await _makeRequest('DELETE', '/admin/batches/$batchId');
       print('AdminAPI: Партия $batchId удалена');
       return result;
     } catch (e) {
