@@ -523,15 +523,64 @@ class _UsersManagementScreenState extends State<_UsersManagementScreen> {
     );
   }
 
-  // Добавить этот метод в _UsersManagementScreenState:
-
   Future<void> _deleteUser(Map<String, dynamic> user) async {
+    // Показываем диалог с выбором действия
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Управление пользователем'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                'Пользователь: ${user['firstName']} ${user['lastName'] ?? ''}'),
+            Text('Телефон: ${user['phone']}'),
+            SizedBox(height: 12),
+            Text(
+              'Выберите действие:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text(
+                '• Деактивировать - пользователь не сможет войти, но данные сохранятся'),
+            Text(
+                '• Удалить - полное удаление из системы (только если нет заказов)'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'deactivate'),
+            style: TextButton.styleFrom(foregroundColor: Colors.orange),
+            child: Text('Деактивировать'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'delete'),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text('Удалить навсегда'),
+          ),
+        ],
+      ),
+    );
+
+    if (action == null) return;
+
+    // Подтверждение действия
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Удалить пользователя?'),
+        title: Text(action == 'delete'
+            ? 'Удалить пользователя?'
+            : 'Деактивировать пользователя?'),
         content: Text(
-            'Пользователь "${user['firstName']} ${user['lastName']}" будет удален навсегда. Это действие нельзя отменить.'),
+          action == 'delete'
+              ? 'Это действие нельзя отменить! Все данные будут удалены навсегда.'
+              : 'Пользователь не сможет войти в систему, но его данные сохранятся.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -539,8 +588,10 @@ class _UsersManagementScreenState extends State<_UsersManagementScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: Text('Удалить'),
+            style: TextButton.styleFrom(
+              foregroundColor: action == 'delete' ? Colors.red : Colors.orange,
+            ),
+            child: Text('Подтвердить'),
           ),
         ],
       ),
@@ -549,20 +600,53 @@ class _UsersManagementScreenState extends State<_UsersManagementScreen> {
     if (confirmed != true) return;
 
     try {
-      await _apiService.deleteUser(user['id']);
+      if (action == 'delete') {
+        await _apiService.deleteUser(user['id']);
 
-      setState(() {
-        _users.removeWhere((u) => u['id'] == user['id']);
-      });
+        setState(() {
+          _users.removeWhere((u) => u['id'] == user['id']);
+        });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('✅ Пользователь удален')),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Пользователь удален'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        await _apiService.deactivateUser(user['id']);
+
+        setState(() {
+          final index = _users.indexWhere((u) => u['id'] == user['id']);
+          if (index != -1) {
+            _users[index]['isActive'] = false;
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⛔ Пользователь деактивирован'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
     } catch (e) {
+      String errorMessage = e.toString();
+
+      // Обработка специфических ошибок
+      if (errorMessage.contains('активными заказами')) {
+        errorMessage =
+            'У пользователя есть активные заказы. Сначала завершите их.';
+      } else if (errorMessage.contains('заказов в истории')) {
+        errorMessage =
+            'У пользователя есть история заказов. Рекомендуется деактивация.';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('❌ Ошибка: $e'),
+          content: Text('❌ Ошибка: $errorMessage'),
           backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
         ),
       );
     }

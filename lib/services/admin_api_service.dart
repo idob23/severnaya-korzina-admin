@@ -150,11 +150,26 @@ class AdminApiService {
   Future<Map<String, dynamic>> deleteUser(int userId) async {
     print('AdminAPI: Удаление пользователя $userId');
     try {
-      final result = await _makeRequest('DELETE', '/auth/admin-users/$userId');
+      // Исправляем путь с /auth/admin-users/$userId на /admin/users/$userId
+      final result = await _makeRequest('DELETE', '/admin/users/$userId');
       print('AdminAPI: Пользователь $userId удален');
       return result;
     } catch (e) {
       print('AdminAPI: Ошибка удаления пользователя: $e');
+      rethrow;
+    }
+  }
+
+  /// Деактивировать пользователя (безопасная альтернатива удалению)
+  Future<Map<String, dynamic>> deactivateUser(int userId) async {
+    print('AdminAPI: Деактивация пользователя $userId');
+    try {
+      final result =
+          await _makeRequest('PUT', '/admin/users/$userId/deactivate');
+      print('AdminAPI: Пользователь $userId деактивирован');
+      return result;
+    } catch (e) {
+      print('AdminAPI: Ошибка деактивации пользователя: $e');
       rethrow;
     }
   }
