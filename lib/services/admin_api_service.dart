@@ -324,6 +324,34 @@ class AdminApiService {
     });
   }
 
+  /// Получить общий заказ по партии
+  Future<Map<String, dynamic>> getTotalOrder(int batchId) async {
+    print('AdminAPI: Получение общего заказа для партии $batchId');
+    try {
+      final result =
+          await _makeRequest('GET', '/admin/batches/$batchId/total-order');
+      print('AdminAPI: Общий заказ получен');
+      return result;
+    } catch (e) {
+      print('AdminAPI: Ошибка получения общего заказа: $e');
+      rethrow;
+    }
+  }
+
+  /// Получить заказы сгруппированные по пользователям
+  Future<Map<String, dynamic>> getOrdersByUsers(int batchId) async {
+    print('AdminAPI: Получение заказов по пользователям для партии $batchId');
+    try {
+      final result =
+          await _makeRequest('GET', '/admin/batches/$batchId/orders-by-users');
+      print('AdminAPI: Заказы по пользователям получены');
+      return result;
+    } catch (e) {
+      print('AdminAPI: Ошибка получения заказов по пользователям: $e');
+      rethrow;
+    }
+  }
+
   /// Удалить партию
   Future<Map<String, dynamic>> deleteBatch(int batchId) async {
     print('AdminAPI: Удаление партии $batchId');

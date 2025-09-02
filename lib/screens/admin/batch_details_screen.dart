@@ -19,6 +19,7 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
   List<dynamic> _orders = [];
   bool _isLoading = true;
   String? _error;
+  Map<String, dynamic>? _totalOrder;
 
   @override
   void initState() {
@@ -239,8 +240,8 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
     );
   }
 
+  // Заменить метод _buildControlButtons на этот обновленный:
   Widget _buildControlButtons() {
-    // Считаем количество заказов по статусам
     final paidOrders = _orders.where((o) => o['status'] == 'paid').length;
     final shippedOrders = _orders.where((o) => o['status'] == 'shipped').length;
 
@@ -256,7 +257,7 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Управление статусами заказов',
+            'Управление партией',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -265,9 +266,56 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
           ),
           SizedBox(height: 16),
 
+          // Кнопки для общих заказов
           Row(
             children: [
-              // Кнопка "Машина уехала" (shipped)
+              // Кнопка "Общий заказ"
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _orders.isNotEmpty ? _showTotalOrder : null,
+                  icon: Icon(Icons.list_alt, size: 20),
+                  label: Text(
+                    'Общий заказ',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple[600],
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(width: 8),
+              // Новая кнопка "По пользователям"
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _orders.isNotEmpty ? _showOrdersByUsers : null,
+                  icon: Icon(Icons.people, size: 20),
+                  label: Text(
+                    'По пользователям',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo[600],
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          SizedBox(height: 12),
+
+          Row(
+            children: [
+              // Кнопка "Машина уехала"
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: paidOrders > 0 ? _shipOrders : null,
@@ -286,7 +334,7 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
 
               SizedBox(width: 12),
 
-              // Кнопка "Машина приехала" (delivered)
+              // Кнопка "Машина приехала"
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: shippedOrders > 0 ? _deliverOrders : null,
@@ -305,32 +353,12 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
             ],
           ),
 
-          SizedBox(height: 12),
-
-          // Кнопка "Откатить партию" (возврат денег)
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _orders.isNotEmpty ? _refundBatch : null,
-              icon: Icon(Icons.undo),
-              label: Text('Откатить партию (возврат денег)'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red[600],
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
-
           // Подсказки
           SizedBox(height: 12),
           Text(
-            '• "Машина уехала" переведет все оплаченные заказы в статус "Отправлен"\n'
-            '• "Машина приехала" переведет все отправленные заказы в "Доставлен"\n'
-            '• Пользователи получат SMS уведомления',
+            '• "Общий заказ" - сводка всех товаров для закупки у поставщика\n'
+            '• "По пользователям" - группировка товаров по клиентам для раздачи\n'
+            '• "Машина уехала/приехала" - управление статусами доставки',
             style: TextStyle(
               fontSize: 11,
               color: Colors.grey[600],
@@ -406,113 +434,618 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
     );
   }
 
+  // Полностью заменить метод _buildOrderCard:
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final user = _safeMap(order['user']) ?? {};
     final address = _safeMap(order['address']) ?? {};
+    // ИСПРАВЛЕНИЕ: используем 'items' вместо 'orderItems'
+    final orderItems = _safeList(order['items'] ?? order['orderItems']);
+    final totalAmount = _safeDouble(order['totalAmount']);
+    final status = order['status'] ?? 'pending';
 
     return Card(
       margin: EdgeInsets.only(bottom: 12),
       elevation: 2,
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Заголовок заказа
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Заказ #${_safeString(order['id'])}',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _getOrderStatusColor(_safeString(order['status'])),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _getOrderStatusText(_safeString(order['status'])),
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: CircleAvatar(
+            backgroundColor: _getStatusColor(status).withOpacity(0.2),
+            child: Icon(
+              _getStatusIcon(status),
+              color: _getStatusColor(status),
+              size: 20,
             ),
-
-            SizedBox(height: 12),
-
-            // Информация о пользователе
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Colors.blue[100],
-                  child: Text(
-                    _safeString(user['firstName'], '?').isNotEmpty
-                        ? _safeString(user['firstName'], '?')[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue[700],
-                      fontSize: 14,
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${user['firstName'] ?? user['name'] ?? 'Без имени'} ${user['lastName'] ?? ''}',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Text(
+                '${totalAmount.toStringAsFixed(0)} ₽',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green[700],
+                ),
+              ),
+            ],
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Телефон: ${user['phone'] ?? 'Не указан'}',
+                style: TextStyle(fontSize: 12),
+              ),
+              Text(
+                'Статус: ${_getStatusText(status)} | Товаров: ${orderItems.length}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _getStatusColor(status),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (address['address'] != null)
+                Text(
+                  'Адрес: ${address['address']}',
+                  style: TextStyle(fontSize: 12),
+                ),
+            ],
+          ),
+          children: orderItems.isEmpty
+              ? [
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Нет товаров в заказе',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${_safeString(user['firstName'], 'Имя')} ${_safeString(user['lastName'], '')}',
-                        style: TextStyle(fontWeight: FontWeight.w500),
+                ]
+              : [
+                  // Детали заказа
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Товары в заказе (${orderItems.length}):',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        ...orderItems.map((item) {
+                          // Поддержка разных структур данных
+                          final productName = item['productName'] ??
+                              item['product']?['name'] ??
+                              'Товар';
+                          final quantity = _safeInt(item['quantity']);
+                          final price = _safeDouble(item['price']);
+                          final itemTotal = quantity * price;
+                          final unit =
+                              item['unit'] ?? item['product']?['unit'] ?? 'шт';
+
+                          return Padding(
+                            padding: EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(
+                                    productName,
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    '$quantity $unit × ${price.toStringAsFixed(0)} ₽',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                    textAlign: TextAlign.right,
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                SizedBox(
+                                  width: 70,
+                                  child: Text(
+                                    '${itemTotal.toStringAsFixed(0)} ₽',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.green[700],
+                                    ),
+                                    textAlign: TextAlign.right,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        Divider(height: 16),
+                        Row(
+                          children: [
+                            Spacer(),
+                            Text(
+                              'Итого: ',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '${totalAmount.toStringAsFixed(0)} ₽',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+        ),
+      ),
+    );
+  }
+
+// Добавить новый метод для показа общего заказа:
+  Future<void> _showTotalOrder() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await _apiService.getTotalOrder(widget.batch['id']);
+      final totalOrder = response['totalOrder'];
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.8,
+            height: MediaQuery.of(context).size.height * 0.8,
+            padding: EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.list_alt, color: Colors.purple[600], size: 28),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Общий заказ партии',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      Text(
-                        _safeString(user['phone'], 'Телефон не указан'),
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+
+                // Статистика
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.purple[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      Column(
+                        children: [
+                          Text(
+                            'Заказов',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          Text(
+                            '${totalOrder['ordersCount']}',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        children: [
+                          Text(
+                            'Участников',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          Text(
+                            '${totalOrder['uniqueUsersCount']}',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        children: [
+                          Text(
+                            'Общая сумма',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          Text(
+                            '${_safeDouble(totalOrder['totalAmount']).toStringAsFixed(0)} ₽',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green[700],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                Text(
-                  '${_safeDouble(order['totalAmount']).toStringAsFixed(0)}₽',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green[700],
+
+                SizedBox(height: 16),
+
+                // Список товаров
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: (totalOrder['items'] as List).length,
+                    itemBuilder: (context, index) {
+                      final item = totalOrder['items'][index];
+                      return Card(
+                        margin: EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text(
+                            item['productName'],
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            'Категория: ${item['category']}',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${item['quantity']} ${item['unit']}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              Text(
+                                '${_safeDouble(item['totalSum']).toStringAsFixed(0)} ₽',
+                                style: TextStyle(
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
             ),
-
-            // Адрес доставки
-            if (_safeString(address['title']).isNotEmpty) ...[
-              SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
-                  SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      '${_safeString(address['title'])}: ${_safeString(address['address'])}',
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      _showSnackBar('Ошибка загрузки общего заказа: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Добавить новый метод _showOrdersByUsers после метода _showTotalOrder:
+  Future<void> _showOrdersByUsers() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await _apiService.getOrdersByUsers(widget.batch['id']);
+      final userOrders = response['userOrders'] as List;
+      final totalUsers = response['totalUsers'];
+      final totalAmount = _safeDouble(response['totalAmount']);
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.9,
+            height: MediaQuery.of(context).size.height * 0.85,
+            padding: EdgeInsets.all(20),
+            child: Column(
+              children: [
+                // Заголовок
+                Row(
+                  children: [
+                    Icon(Icons.people, color: Colors.indigo[600], size: 28),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Заказы по пользователям',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+
+                // Статистика
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      Column(
+                        children: [
+                          Text(
+                            'Пользователей',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          Text(
+                            '$totalUsers',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.indigo[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        children: [
+                          Text(
+                            'Общая сумма',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          Text(
+                            '${totalAmount.toStringAsFixed(0)} ₽',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        children: [
+                          Text(
+                            'Средний чек',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          Text(
+                            '${totalUsers > 0 ? (totalAmount / totalUsers).toStringAsFixed(0) : 0} ₽',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                SizedBox(height: 16),
+
+                // Список пользователей с их заказами
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: userOrders.length,
+                    itemBuilder: (context, index) {
+                      final userOrder = userOrders[index];
+                      final items = _safeList(userOrder['items']);
+                      final userTotal = _safeDouble(userOrder['totalAmount']);
+                      final ordersCount = _safeInt(userOrder['ordersCount']);
+
+                      return Card(
+                        margin: EdgeInsets.only(bottom: 12),
+                        elevation: 2,
+                        child: Theme(
+                          data: Theme.of(context)
+                              .copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            tilePadding: EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            childrenPadding: EdgeInsets.all(16),
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.indigo[100],
+                              child: Text(
+                                '${index + 1}',
+                                style: TextStyle(
+                                  color: Colors.indigo[800],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        userOrder['userName'] ?? 'Без имени',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                      Text(
+                                        userOrder['phone'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '${userTotal.toStringAsFixed(0)} ₽',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: Colors.green[700],
+                                      ),
+                                    ),
+                                    Text(
+                                      'Заказов: $ordersCount',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              'Адрес: ${userOrder['address'] ?? 'Не указан'}',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Товары (${items.length} позиций):',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    SizedBox(height: 8),
+                                    ...items.map((item) {
+                                      final quantity =
+                                          _safeInt(item['quantity']);
+                                      final totalSum =
+                                          _safeDouble(item['totalSum']);
+
+                                      return Padding(
+                                        padding:
+                                            EdgeInsets.symmetric(vertical: 3),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              flex: 3,
+                                              child: Text(
+                                                '• ${item['productName']}',
+                                                style: TextStyle(fontSize: 12),
+                                              ),
+                                            ),
+                                            Text(
+                                              '$quantity ${item['unit'] ?? 'шт'}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            SizedBox(width: 16),
+                                            Text(
+                                              '${totalSum.toStringAsFixed(0)} ₽',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.green[700],
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _showSnackBar('Ошибка загрузки заказов по пользователям: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   // Методы для управления статусами
@@ -670,14 +1203,18 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
     );
   }
 
-  // Вспомогательные методы
-  Color _getBatchStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'active':
-      case 'collecting':
+  Color _getStatusColor(String? status) {
+    switch (status?.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'paid':
         return Colors.green;
-      case 'completed':
+      case 'confirmed':
         return Colors.blue;
+      case 'shipped':
+        return Colors.indigo;
+      case 'delivered':
+        return Colors.teal;
       case 'cancelled':
         return Colors.red;
       default:
@@ -685,18 +1222,74 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
     }
   }
 
-  String _getBatchStatusText(String status) {
-    switch (status.toLowerCase()) {
+  IconData _getStatusIcon(String? status) {
+    switch (status?.toLowerCase()) {
+      case 'pending':
+        return Icons.access_time;
+      case 'paid':
+        return Icons.payment;
+      case 'confirmed':
+        return Icons.check_circle;
+      case 'shipped':
+        return Icons.local_shipping;
+      case 'delivered':
+        return Icons.done_all;
+      case 'cancelled':
+        return Icons.cancel;
+      default:
+        return Icons.help_outline;
+    }
+  }
+
+  String _getStatusText(String? status) {
+    switch (status?.toLowerCase()) {
+      case 'pending':
+        return 'Ожидает оплаты';
+      case 'paid':
+        return 'Оплачен';
+      case 'confirmed':
+        return 'Подтвержден';
+      case 'shipped':
+        return 'Отправлен';
+      case 'delivered':
+        return 'Доставлен';
+      case 'cancelled':
+        return 'Отменен';
+      default:
+        return status ?? 'Неизвестен';
+    }
+  }
+
+  Color _getBatchStatusColor(String? status) {
+    switch (status?.toLowerCase()) {
       case 'active':
-        return 'Активная';
+      case 'collecting':
+        return Colors.green;
+      case 'completed':
+        return Colors.blue;
+      case 'delivered':
+        return Colors.teal;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getBatchStatusText(String? status) {
+    switch (status?.toLowerCase()) {
+      case 'active':
+        return 'Активна';
       case 'collecting':
         return 'Сбор средств';
       case 'completed':
         return 'Завершена';
+      case 'delivered':
+        return 'Доставлена';
       case 'cancelled':
         return 'Отменена';
       default:
-        return status;
+        return status ?? 'Неизвестен';
     }
   }
 
@@ -735,6 +1328,12 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
       if (parsed != null) return parsed;
     }
     return defaultValue;
+  }
+
+  List<dynamic> _safeList(dynamic value) {
+    if (value == null) return [];
+    if (value is List) return value;
+    return [];
   }
 
   double _safeDouble(dynamic value, [double defaultValue = 0.0]) {
