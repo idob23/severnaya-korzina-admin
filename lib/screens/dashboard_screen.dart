@@ -743,7 +743,7 @@ class _UsersManagementScreenState extends State<_UsersManagementScreen> {
   }
 }
 
-/// Управление товарами - РЕАЛЬНЫЙ ФУНКЦИОНАЛ
+/// Управление товарами - С ФУНКЦИЕЙ УПРАВЛЕНИЯ ОСТАТКАМИ
 class _ProductsManagementScreen extends StatefulWidget {
   @override
   _ProductsManagementScreenState createState() =>
@@ -755,6 +755,8 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
   List<dynamic> _products = [];
   bool _isLoading = true;
   String? _error;
+  String _searchQuery = '';
+  String _sortBy = 'name'; // 'name', 'stock', 'category'
 
   @override
   void initState() {
@@ -772,6 +774,7 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
       final response = await _apiService.getProducts();
       setState(() {
         _products = response['products'] ?? [];
+        _sortProducts();
         _isLoading = false;
       });
     } catch (e) {
@@ -782,54 +785,371 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
     }
   }
 
-  Color _getCategoryColor(String? categoryName) {
-    if (categoryName == null) return Colors.grey;
+  void _sortProducts() {
+    _products.sort((a, b) {
+      switch (_sortBy) {
+        case 'name':
+          return (a['name'] ?? '').compareTo(b['name'] ?? '');
+        case 'stock':
+          final aStock = a['maxQuantity'] ?? 999999;
+          final bStock = b['maxQuantity'] ?? 999999;
+          return aStock.compareTo(bStock);
+        case 'category':
+          final aCat = a['category']?['name'] ?? '';
+          final bCat = b['category']?['name'] ?? '';
+          return aCat.compareTo(bCat);
+        default:
+          return 0;
+      }
+    });
+  }
 
-    switch (categoryName.toLowerCase()) {
-      case 'молочные продукты':
-        return Colors.blue;
-      case 'мясо и птица':
-        return Colors.red;
-      case 'хлебобулочные изделия':
-        return Colors.orange;
-      case 'овощи и фрукты':
-        return Colors.green;
-      case 'крупы и макароны':
-        return Colors.purple;
-      default:
-        return Colors.grey;
+  List<dynamic> get _filteredProducts {
+    if (_searchQuery.isEmpty) return _products;
+
+    return _products.where((product) {
+      final name = (product['name'] ?? '').toLowerCase();
+      final category = (product['category']?['name'] ?? '').toLowerCase();
+      final query = _searchQuery.toLowerCase();
+      return name.contains(query) || category.contains(query);
+    }).toList();
+  }
+
+  Color _getCategoryColor(String? category) {
+    if (category == null) return Colors.grey;
+
+    final categoryColors = {
+      'Молочные': Colors.blue[300]!,
+      'Мясные': Colors.red[300]!,
+      'Хлебобулочные': Colors.orange[300]!,
+      'Овощи и фрукты': Colors.green[300]!,
+      'Напитки': Colors.purple[300]!,
+      'Бакалея': Colors.brown[300]!,
+      'Заморозка': Colors.cyan[300]!,
+    };
+
+    return categoryColors[category] ?? Colors.grey[300]!;
+  }
+
+  Color _getStockColor(int? maxQuantity) {
+    if (maxQuantity == null) return Colors.grey;
+    if (maxQuantity == 0) return Colors.red;
+    if (maxQuantity <= 5) return Colors.orange;
+    if (maxQuantity <= 20) return Colors.yellow[700]!;
+    return Colors.green;
+  }
+
+  void _showStockEditDialog(Map<String, dynamic> product) {
+    final controller =
+        TextEditingController(text: product['maxQuantity']?.toString() ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.inventory, color: Colors.blue, size: 24),
+            SizedBox(width: 8),
+            Text('Управление остатками'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Информация о товаре
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product['name'] ?? '',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '${product['price']} ₽ / ${product['unit'] ?? 'шт'}',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    if (product['category'] != null)
+                      Text(
+                        'Категория: ${product['category']['name']}',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: 16),
+
+              // Текущий остаток
+              Row(
+                children: [
+                  Text('Текущий остаток: '),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _getStockColor(product['maxQuantity'])
+                          .withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                          color: _getStockColor(product['maxQuantity'])),
+                    ),
+                    child: Text(
+                      product['maxQuantity']?.toString() ?? 'Неограничено',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _getStockColor(product['maxQuantity']),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 20),
+
+              // Поле ввода нового остатка
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Новый остаток',
+                  hintText: 'Оставьте пустым для снятия ограничения',
+                  border: OutlineInputBorder(),
+                  suffixText: product['unit'] ?? 'шт',
+                  prefixIcon: Icon(Icons.edit),
+                ),
+              ),
+
+              SizedBox(height: 16),
+
+              // Кнопки быстрого добавления
+              Text(
+                'Быстрое добавление:',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [10, 20, 50, 100]
+                    .map(
+                      (amount) => ElevatedButton(
+                        onPressed: () {
+                          final current = int.tryParse(controller.text) ??
+                              product['maxQuantity'] ??
+                              0;
+                          controller.text = (current + amount).toString();
+                        },
+                        child: Text('+$amount'),
+                        style: ElevatedButton.styleFrom(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+
+              // Предупреждение о низких остатках
+              if (product['maxQuantity'] != null && product['maxQuantity'] <= 5)
+                Container(
+                  margin: EdgeInsets.only(top: 16),
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning, color: Colors.orange[700], size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          product['maxQuantity'] == 0
+                              ? 'Товар закончился! Срочно пополните остатки.'
+                              : 'Низкий остаток! Рекомендуется пополнить.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.orange[700],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _updateProductStock(
+                product['id'],
+                controller.text.isEmpty ? null : int.tryParse(controller.text),
+              );
+            },
+            icon: Icon(Icons.save),
+            label: Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _updateProductStock(int productId, int? newStock) async {
+    try {
+      await _apiService.updateProduct(productId, {
+        'maxQuantity': newStock,
+      });
+
+      await _loadProducts();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Остаток обновлен'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка обновления остатка'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Подсчет товаров с низкими остатками
+    final lowStockCount = _products
+        .where((p) => p['maxQuantity'] != null && p['maxQuantity'] <= 5)
+        .length;
+
     return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: Text('Управление товарами'),
+        backgroundColor: Colors.blue[600],
+        actions: [
+          // Индикатор низких остатков
+          if (lowStockCount > 0)
+            Container(
+              margin: EdgeInsets.only(right: 8, top: 12, bottom: 12),
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.warning, size: 16, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text(
+                    '$lowStockCount',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          IconButton(
+            icon: Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => AddProductScreen()),
+              ).then((_) => _loadProducts());
+            },
+            tooltip: 'Добавить товар',
+          ),
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _loadProducts,
+            tooltip: 'Обновить',
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          // Заголовок
-          Padding(
+          // Панель поиска и фильтров
+          Container(
             padding: EdgeInsets.all(16),
+            color: Colors.white,
             child: Row(
               children: [
-                Icon(Icons.inventory, size: 24),
-                SizedBox(width: 8),
-                Text(
-                  'Управление товарами',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                // Поиск
+                Expanded(
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Поиск товара...',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    onChanged: (value) {
+                      setState(() => _searchQuery = value);
+                    },
+                  ),
                 ),
-                Spacer(),
-                IconButton(
-                  icon: Icon(Icons.refresh),
-                  onPressed: _loadProducts,
-                  tooltip: 'Обновить',
+                SizedBox(width: 16),
+                // Сортировка
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _sortBy,
+                    underline: SizedBox(),
+                    items: [
+                      DropdownMenuItem(
+                          value: 'name', child: Text('По названию')),
+                      DropdownMenuItem(
+                          value: 'stock', child: Text('По остаткам')),
+                      DropdownMenuItem(
+                          value: 'category', child: Text('По категории')),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _sortBy = value!;
+                        _sortProducts();
+                      });
+                    },
+                  ),
                 ),
               ],
             ),
           ),
 
-          // Контент
+          // Список товаров
           Expanded(
             child: _isLoading
                 ? Center(child: CircularProgressIndicator())
@@ -861,7 +1181,9 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
   }
 
   Widget _buildProductsList() {
-    if (_products.isEmpty) {
+    final products = _filteredProducts;
+
+    if (products.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -869,6 +1191,13 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
             Icon(Icons.inventory_outlined, size: 64, color: Colors.grey),
             SizedBox(height: 16),
             Text('Товары не найдены'),
+            if (_searchQuery.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  setState(() => _searchQuery = '');
+                },
+                child: Text('Сбросить поиск'),
+              ),
           ],
         ),
       );
@@ -876,11 +1205,16 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
 
     return ListView.builder(
       padding: EdgeInsets.all(16),
-      itemCount: _products.length,
+      itemCount: products.length,
       itemBuilder: (context, index) {
-        final product = _products[index];
+        final product = products[index];
+        final stock = product['maxQuantity'];
+        final isLowStock = stock != null && stock <= 5 && stock > 0;
+        final isOutOfStock = stock != null && stock == 0;
+
         return Card(
           margin: EdgeInsets.only(bottom: 8),
+          color: isOutOfStock ? Colors.red[50] : null,
           child: ListTile(
             leading: Container(
               width: 50,
@@ -889,67 +1223,146 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
                 color: _getCategoryColor(product['category']?['name']),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                Icons.shopping_bag,
-                color: Colors.white,
-                size: 24,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.shopping_bag, color: Colors.white, size: 20),
+                  if (stock != null)
+                    Text(
+                      stock.toString(),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                ],
               ),
             ),
-            title: Text(
-              product['name'] ?? 'Без названия',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    product['name'] ?? 'Без названия',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                // Индикатор остатка
+                if (stock != null)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _getStockColor(stock),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      stock == 0 ? 'НЕТ' : stock.toString(),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                    'Категория: ${product['category']?['name'] ?? 'Не указана'}'),
-                Text('Единица: ${product['unit'] ?? 'шт'}'),
-                if (product['description'] != null)
-                  Text(
-                    product['description'],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-              ],
-            ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '${product['price']} ₽',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.green[700],
-                  ),
+                  '${product['price']} ₽/${product['unit'] ?? "шт"} • ${product['category']?['name'] ?? "Без категории"}',
+                  style: TextStyle(fontSize: 12),
                 ),
-                SizedBox(height: 4),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color:
-                        product['isActive'] == true ? Colors.green : Colors.red,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    product['isActive'] == true ? 'Активен' : 'Скрыт',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                if (isLowStock || isOutOfStock)
+                  Container(
+                    margin: EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.warning,
+                          size: 12,
+                          color: isOutOfStock ? Colors.red : Colors.orange,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          isOutOfStock ? 'Нет в наличии!' : 'Мало остатков!',
+                          style: TextStyle(
+                            color: isOutOfStock ? Colors.red : Colors.orange,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+              ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(Icons.inventory, color: Colors.blue),
+                  onPressed: () => _showStockEditDialog(product),
+                  tooltip: 'Управление остатками',
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete, color: Colors.red),
+                  onPressed: () => _deleteProduct(product),
+                  tooltip: 'Удалить товар',
                 ),
               ],
             ),
-            isThreeLine: true,
+            onTap: () => _showStockEditDialog(product),
           ),
         );
       },
     );
+  }
+
+  Future<void> _deleteProduct(Map<String, dynamic> product) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить товар?'),
+        content: Text('Вы действительно хотите удалить "${product['name']}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _apiService.deleteProduct(product['id']);
+        await _loadProducts();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Товар удален'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ошибка удаления товара'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 }
 
