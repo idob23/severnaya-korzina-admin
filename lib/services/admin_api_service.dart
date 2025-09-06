@@ -523,6 +523,23 @@ class AdminApiService {
     }
   }
 
+  // Получение настроек системы
+  Future<Map<String, dynamic>> getSystemSettings() async {
+    final response = await _makeRequest('GET', '/admin/settings');
+    return response;
+  }
+
+// Обновление настройки
+  Future<Map<String, dynamic>> updateSystemSetting(
+      String key, String value) async {
+    final response = await _makeRequest(
+      'PUT',
+      '/admin/settings/$key',
+      body: {'value': value},
+    );
+    return response;
+  }
+
   /// Изменить статус оформления заказов
   Future<Map<String, dynamic>> setCheckoutEnabled(bool enabled) async {
     try {

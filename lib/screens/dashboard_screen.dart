@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../services/admin_api_service.dart';
 import '../../constants/order_status.dart';
 import 'admin/batch_details_screen.dart';
+import 'admin/system_settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -24,7 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _ProductsManagementScreen(),
     _BatchesManagementScreen(),
     _MoneyCollectionScreen(), // <-- НОВЫЙ ЭКРАН ЗДЕСЬ
-    _SettingsScreen(),
+    SystemSettingsScreen(), // ДОБАВИТЬ
   ];
 
   // Элементы навигации
