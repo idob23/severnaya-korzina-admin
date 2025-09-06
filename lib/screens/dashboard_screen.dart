@@ -2218,11 +2218,38 @@ class _MoneyCollectionScreenState extends State<_MoneyCollectionScreen> {
   final _targetAmountController = TextEditingController();
   bool _isLoading = false;
 
+  // ДОБАВИТЬ ЭТИ ПЕРЕМЕННЫЕ:
+  Map<String, dynamic>? _activeBatch;
+  bool _isLoadingBatch = false;
+
   @override
   void initState() {
     super.initState();
     // Устанавливаем значение по умолчанию (3 млн рублей)
     _targetAmountController.text = '3000000';
+    _loadBatchStatus(); // ДОБАВИТЬ ЭТУ СТРОКУ!
+  }
+
+  // ДОБАВИТЬ ЭТОТ МЕТОД:
+  Future<void> _loadBatchStatus() async {
+    setState(() {
+      _isLoadingBatch = true;
+    });
+
+    try {
+      final response = await _apiService.getActiveBatch();
+      if (response['success'] == true) {
+        setState(() {
+          _activeBatch = response['batch'];
+          _isLoadingBatch = false;
+        });
+      }
+    } catch (e) {
+      print('Ошибка загрузки статуса партии: $e');
+      setState(() {
+        _isLoadingBatch = false;
+      });
+    }
   }
 
   @override
@@ -2248,6 +2275,35 @@ class _MoneyCollectionScreenState extends State<_MoneyCollectionScreen> {
             ),
 
             SizedBox(height: 32),
+
+            // ДОБАВИТЬ БЛОК ОТОБРАЖЕНИЯ ТЕКУЩЕЙ ПАРТИИ:
+            if (_activeBatch != null)
+              Card(
+                color: Colors.green[50],
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Активная партия',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text('Название: ${_activeBatch!['title']}'),
+                      Text('Цель: ${_activeBatch!['targetAmount']}₽'),
+                      Text('Собрано: ${_activeBatch!['currentAmount']}₽'),
+                      Text('Прогресс: ${_activeBatch!['progressPercent']}%'),
+                      Text('Участников: ${_activeBatch!['participantsCount']}'),
+                    ],
+                  ),
+                ),
+              ),
+
+            SizedBox(height: 24),
 
             // Поле для целевой суммы
             Card(
