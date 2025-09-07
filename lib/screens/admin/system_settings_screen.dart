@@ -16,6 +16,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
   String _selectedVatCode = '6';
   String _selectedPaymentMode = 'test';
   bool _enableTestCards = true;
+  bool _checkoutEnabled = true;
 
   final Map<String, String> vatCodes = {
     '1': 'НДС 20%',
@@ -30,6 +31,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
   void initState() {
     super.initState();
     _loadSettings();
+    _loadCheckoutStatus(); // <- Добавить эту строку
   }
 
   Future<void> _loadSettings() async {
@@ -49,6 +51,57 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка загрузки настроек: $e')),
       );
+    }
+  }
+
+  Future<void> _loadCheckoutStatus() async {
+    try {
+      final response = await _apiService.getCheckoutEnabled();
+      if (mounted) {
+        setState(() {
+          _checkoutEnabled = response['checkoutEnabled'] ?? true;
+        });
+      }
+    } catch (e) {
+      print('Ошибка загрузки статуса checkout: $e');
+    }
+  }
+
+  Future<void> _toggleCheckout(bool value) async {
+    setState(() {
+      _checkoutEnabled = value;
+    });
+
+    try {
+      await _apiService.setCheckoutEnabled(value);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? '✅ Оформление заказов включено'
+                  : '⛔ Оформление заказов выключено',
+            ),
+            backgroundColor: value ? Colors.green : Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      // Откат при ошибке
+      if (mounted) {
+        setState(() {
+          _checkoutEnabled = !value;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: не удалось изменить настройку'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -89,6 +142,130 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
       body: ListView(
         padding: EdgeInsets.all(16),
         children: [
+          Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Управление заказами',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue[800],
+                    ),
+                  ),
+                  SizedBox(height: 20),
+
+                  // Переключатель оформления заказов
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color:
+                          _checkoutEnabled ? Colors.green[50] : Colors.red[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _checkoutEnabled
+                            ? Colors.green[400]!
+                            : Colors.red[400]!,
+                        width: 2,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        // Иконка статуса
+                        Container(
+                          padding: EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: _checkoutEnabled ? Colors.green : Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _checkoutEnabled ? Icons.check_circle : Icons.block,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+
+                        SizedBox(width: 16),
+
+                        // Текст статуса
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Оформление заказов',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                _checkoutEnabled
+                                    ? 'Пользователи могут оформлять заказы'
+                                    : 'Оформление заказов временно заблокировано',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Переключатель
+                        Transform.scale(
+                          scale: 1.2,
+                          child: Switch(
+                            value: _checkoutEnabled,
+                            onChanged: _toggleCheckout,
+                            activeColor: Colors.green,
+                            inactiveThumbColor: Colors.red,
+                            inactiveTrackColor: Colors.red[200]!,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  SizedBox(height: 16),
+
+                  // Информационная панель
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue[200]!),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline,
+                            color: Colors.blue[700], size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Используйте этот переключатель для временной блокировки оформления новых заказов во время технических работ или при отсутствии активной закупки.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blue[900],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          SizedBox(height: 16),
+
           // Секция платежей
           Card(
             child: Padding(
