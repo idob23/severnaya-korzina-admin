@@ -8,6 +8,7 @@ import '../services/admin_api_service.dart';
 import '../../constants/order_status.dart';
 import 'admin/batch_details_screen.dart';
 import 'admin/system_settings_screen.dart';
+import 'package:intl/intl.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -2257,6 +2258,21 @@ class _MoneyCollectionScreenState extends State<_MoneyCollectionScreen> {
   void dispose() {
     _targetAmountController.dispose();
     super.dispose();
+  }
+
+  // Проверяем, можно ли завершить сбор (статус collecting или ready)
+  bool _canStopCollection() {
+    if (_activeBatch == null) return false;
+    final status = _activeBatch!['status'];
+    return status == 'collecting' || status == 'ready';
+  }
+
+  // Проверяем, можно ли начать новый сбор
+  bool _canStartCollection() {
+    if (_activeBatch == null) return true;
+    final status = _activeBatch!['status'];
+    // Можно начать новый сбор, если нет активной партии или она завершена
+    return status == 'completed' || status == 'delivered';
   }
 
   @override
