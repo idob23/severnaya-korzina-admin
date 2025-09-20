@@ -258,6 +258,43 @@ class AdminApiService {
     return await _makeRequest('DELETE', '/admin/products/$productId');
   }
 
+  // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ РЕЖИМОМ ОБСЛУЖИВАНИЯ ===
+
+  /// Получить статус режима обслуживания
+  Future<Map<String, dynamic>> getMaintenanceStatus() async {
+    return await _makeRequest('GET', '/admin/maintenance');
+  }
+
+  /// Обновить режим обслуживания
+  Future<Map<String, dynamic>> updateMaintenanceMode({
+    required bool enabled,
+    required String message,
+    String? endTime,
+    List<String>? allowedPhones,
+  }) async {
+    return await _makeRequest('PUT', '/admin/maintenance', body: {
+      'enabled': enabled,
+      'message': message,
+      'end_time': endTime ?? '',
+      'allowed_phones': allowedPhones ?? [],
+    });
+  }
+
+  /// Добавить телефон в белый список
+  Future<Map<String, dynamic>> addAllowedPhone(String phone) async {
+    return await _makeRequest('POST', '/admin/maintenance/allow-phone', body: {
+      'phone': phone,
+    });
+  }
+
+  /// Удалить телефон из белого списка
+  Future<Map<String, dynamic>> removeAllowedPhone(String phone) async {
+    return await _makeRequest(
+      'DELETE',
+      '/admin/maintenance/allow-phone/${Uri.encodeComponent(phone)}',
+    );
+  }
+
   /// Обновить название закупки
   Future<Map<String, dynamic>> updateBatchTitle(
       int batchId, String newTitle) async {

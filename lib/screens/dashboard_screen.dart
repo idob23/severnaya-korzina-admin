@@ -9,6 +9,7 @@ import '../../constants/order_status.dart';
 import 'admin/batch_details_screen.dart';
 import 'admin/system_settings_screen.dart';
 import 'package:intl/intl.dart';
+import 'admin/maintenance_control_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -25,8 +26,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     OrdersManagementScreen(),
     _ProductsManagementScreen(),
     _BatchesManagementScreen(),
-    _MoneyCollectionScreen(), // <-- НОВЫЙ ЭКРАН ЗДЕСЬ
-    SystemSettingsScreen(), // ДОБАВИТЬ
+    _MoneyCollectionScreen(),
+    SystemSettingsScreen(),
+    MaintenanceControlScreen(),
   ];
 
   // Элементы навигации
@@ -52,13 +54,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       label: 'Партии',
     ),
     BottomNavigationBarItem(
-      // <-- НОВАЯ ВКЛАДКА ЗДЕСЬ
       icon: Icon(Icons.attach_money),
       label: 'Сбор денег',
     ),
     BottomNavigationBarItem(
       icon: Icon(Icons.settings),
       label: 'Настройки',
+    ),
+    BottomNavigationBarItem(
+      icon: Icon(Icons.engineering),
+      label: 'Обслуживание',
     ),
   ];
 
