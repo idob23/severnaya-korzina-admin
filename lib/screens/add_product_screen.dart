@@ -306,8 +306,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
-  void _deleteProduct(Map<String, dynamic> product) {
-    showDialog(
+  Future<void> _deleteProduct(Map<String, dynamic> product) async {
+    // Показываем диалог подтверждения
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Удалить товар?'),
@@ -356,39 +357,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: Text('Отмена'),
           ),
           ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-
-              try {
-                await _apiService.deleteProduct(product['id']);
-
-                // Обновляем список товаров
-                await _loadExistingProducts();
-
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Товар "${product['name']}" удален'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } catch (e) {
-                print('Ошибка удаления товара: $e');
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Ошибка удаления товара'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
+            onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
             ),
@@ -397,6 +370,45 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ],
       ),
     );
+
+    // Если пользователь подтвердил удаление
+    if (confirmed == true) {
+      try {
+        print('Начинаем удаление товара ID: ${product['id']}');
+
+        // Вызываем API для удаления
+        await _apiService.deleteProduct(product['id']);
+
+        print('Товар успешно удален с сервера');
+
+        // Обновляем список товаров
+        await _loadExistingProducts();
+
+        // Показываем успешное сообщение
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Товар "${product['name']}" удален'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        print('Ошибка удаления товара: $e');
+
+        // Показываем ошибку пользователю
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ошибка удаления: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -1006,4 +1018,3 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
     );
   }
 }
-

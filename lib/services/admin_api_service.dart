@@ -413,6 +413,25 @@ class AdminApiService {
     return await _makeRequest('POST', '/admin/batches/$batchId/deliver-orders');
   }
 
+  /// Удалить заказ (для админа)
+  Future<Map<String, dynamic>> deleteOrder(int orderId) async {
+    return await _makeRequest('DELETE', '/admin/orders/$orderId');
+  }
+
+  /// Массовое удаление товаров
+  Future<Map<String, dynamic>> bulkDeleteProducts(List<int> productIds) async {
+    return await _makeRequest('DELETE', '/admin/products/bulk-delete', body: {
+      'productIds': productIds,
+    });
+  }
+
+  /// Получить все ID товаров (для массового удаления)
+  Future<List<int>> getAllProductIds() async {
+    final response = await getProducts(limit: 10000); // Получаем все товары
+    final products = response['products'] as List<dynamic>;
+    return products.map((p) => p['id'] as int).toList();
+  }
+
   /// Начать сбор денег (создать или активировать партию)
   Future<Map<String, dynamic>> startMoneyCollection({
     required double targetAmount,

@@ -1049,6 +1049,177 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
     }
   }
 
+  Future<void> _showBulkDeleteDialog() async {
+    // Получаем все товары которые можно удалить
+    final allProductIds = _products.map((p) => p['id'] as int).toList();
+
+    if (allProductIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Нет товаров для удаления'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red, size: 28),
+            SizedBox(width: 12),
+            Text('Удалить все товары?'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Вы действительно хотите удалить все товары?',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Всего товаров: ${_products.length}',
+              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Будут удалены только те товары, которые НЕ используются в активных заказах (pending, paid).',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error, color: Colors.red[700], size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'ЭТО ДЕЙСТВИЕ НЕЛЬЗЯ ОТМЕНИТЬ!',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.red[900],
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Удалить все'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _bulkDeleteProducts(allProductIds);
+    }
+  }
+
+  Future<void> _bulkDeleteProducts(List<int> productIds) async {
+    // Показываем индикатор загрузки
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Удаление товаров...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      print('Начинаем массовое удаление ${productIds.length} товаров');
+
+      final response = await _apiService.bulkDeleteProducts(productIds);
+
+      // Закрываем индикатор загрузки
+      Navigator.pop(context);
+
+      print('Результат: ${response}');
+
+      final deletedCount = response['deleted'] ?? 0;
+      final blockedCount = response['details']?['blocked'] ?? 0;
+
+      // Перезагружаем список товаров
+      await _loadProducts();
+
+      if (mounted) {
+        if (deletedCount > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Удалено товаров: $deletedCount'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+
+        if (blockedCount > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '⚠️ $blockedCount товаров не удалены (используются в активных заказах)',
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Закрываем индикатор загрузки
+      Navigator.pop(context);
+
+      print('Ошибка массового удаления: $e');
+
+      if (mounted) {
+        final errorMessage = e.toString();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Ошибка: $errorMessage'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Подсчет товаров с низкими остатками
@@ -1086,6 +1257,13 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
                 ],
               ),
             ),
+
+          // НОВАЯ КНОПКА МАССОВОГО УДАЛЕНИЯ
+          IconButton(
+            icon: Icon(Icons.delete_sweep),
+            onPressed: _products.isEmpty ? null : _showBulkDeleteDialog,
+            tooltip: 'Удалить все товары',
+          ),
           IconButton(
             icon: Icon(Icons.add),
             onPressed: () {

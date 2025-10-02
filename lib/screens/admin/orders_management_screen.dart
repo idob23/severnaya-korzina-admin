@@ -73,6 +73,104 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
     }
   }
 
+  Future<void> _deleteOrder(Map<String, dynamic> order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить заказ?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Вы действительно хотите удалить заказ #${order['id']}?'),
+            SizedBox(height: 12),
+            Text(
+              'Пользователь: ${order['user']?['firstName'] ?? 'Неизвестно'}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+            ),
+            Text(
+              'Сумма: ${order['totalAmount']} ₽',
+              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+            ),
+            Text(
+              'Статус: ${_getStatusText(order['status'] ?? 'unknown')}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+            ),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning, color: Colors.orange[700], size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Это действие нельзя отменить!',
+                      style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        print('Начинаем удаление заказа ID: ${order['id']}');
+
+        await _apiService.deleteOrder(order['id']);
+
+        print('Заказ успешно удален');
+
+        // Перезагружаем данные
+        await _loadData();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Заказ #${order['id']} удален'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        print('Ошибка удаления заказа: $e');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ошибка удаления: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+  }
+
   // Безопасные методы для работы с данными
   List<dynamic> _safeList(dynamic value) {
     if (value is List) return value;
@@ -356,21 +454,36 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(
-                        _safeString(order['status'], 'unknown')),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _getStatusText(_safeString(order['status'], 'unknown')),
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Статус
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(
+                            _safeString(order['status'], 'unknown')),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _getStatusText(_safeString(order['status'], 'unknown')),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
-                  ),
+                    SizedBox(width: 8),
+                    // НОВАЯ КНОПКА УДАЛЕНИЯ
+                    IconButton(
+                      icon: Icon(Icons.delete, color: Colors.red, size: 20),
+                      onPressed: () => _deleteOrder(order),
+                      tooltip: 'Удалить заказ',
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints(),
+                    ),
+                  ],
                 ),
               ],
             ),
