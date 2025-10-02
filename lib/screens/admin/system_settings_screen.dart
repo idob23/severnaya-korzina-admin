@@ -392,21 +392,71 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
                   SizedBox(height: 16),
 
                   // Маржа по умолчанию
-                  TextField(
-                    controller: _marginController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Маржа по умолчанию (%)',
-                      hintText: 'От 0 до 100',
-                      suffix: Text('%'),
-                      border: OutlineInputBorder(),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _marginController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'Маржа по умолчанию (%)',
+                            hintText: 'От 0 до 100',
+                            suffix: Text('%'),
+                            border: OutlineInputBorder(),
+                          ),
+                          onSubmitted: (value) {
+                            final margin = double.tryParse(value);
+                            if (margin != null &&
+                                margin >= 0 &&
+                                margin <= 100) {
+                              _saveSetting('default_margin_percent', value);
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content:
+                                      Text('Маржа должна быть от 0 до 100%'),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      // ✅ НОВОЕ: Кнопка "Применить"
+                      ElevatedButton(
+                        onPressed: () {
+                          final value = _marginController.text;
+                          final margin = double.tryParse(value);
+                          if (margin != null && margin >= 0 && margin <= 100) {
+                            _saveSetting('default_margin_percent', value);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Маржа должна быть от 0 до 100%'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 16),
+                        ),
+                        child: Icon(Icons.check, color: Colors.white),
+                      ),
+                    ],
+                  ),
+
+                  SizedBox(height: 8),
+                  Text(
+                    'Используется для новых партий',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
                     ),
-                    onSubmitted: (value) {
-                      final margin = double.tryParse(value);
-                      if (margin != null && margin >= 0 && margin <= 100) {
-                        _saveSetting('default_margin_percent', value);
-                      }
-                    },
                   ),
 
                   SizedBox(height: 8),
