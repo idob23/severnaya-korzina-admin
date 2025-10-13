@@ -93,7 +93,12 @@ class AdminApiService {
           break;
         case 'DELETE':
           response = await _client
-              .delete(uri, headers: _defaultHeaders)
+              .delete(
+                uri,
+                headers: _defaultHeaders,
+                body:
+                    body != null ? jsonEncode(body) : null, // ✅ Добавляем body
+              )
               .timeout(Duration(seconds: 30));
           break;
         default:
