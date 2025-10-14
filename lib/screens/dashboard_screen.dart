@@ -764,6 +764,7 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
   String? _error;
   String _searchQuery = '';
   String _sortBy = 'name'; // 'name', 'stock', 'category'
+  bool _hideInactive = true;
 
   @override
   void initState() {
@@ -811,15 +812,37 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
     });
   }
 
-  List<dynamic> get _filteredProducts {
-    if (_searchQuery.isEmpty) return _products;
+  // List<dynamic> get _filteredProducts {
+  //   if (_searchQuery.isEmpty) return _products;
 
-    return _products.where((product) {
-      final name = (product['name'] ?? '').toLowerCase();
-      final category = (product['category']?['name'] ?? '').toLowerCase();
-      final query = _searchQuery.toLowerCase();
-      return name.contains(query) || category.contains(query);
-    }).toList();
+  //   return _products.where((product) {
+  //     final name = (product['name'] ?? '').toLowerCase();
+  //     final category = (product['category']?['name'] ?? '').toLowerCase();
+  //     final query = _searchQuery.toLowerCase();
+  //     return name.contains(query) || category.contains(query);
+  //   }).toList();
+  // }
+
+  List<dynamic> get _filteredProducts {
+    var filtered = _products;
+
+    // ✅ ДОБАВИТЬ: Фильтр по активности
+    if (_hideInactive) {
+      filtered =
+          filtered.where((product) => product['isActive'] == true).toList();
+    }
+
+    // Существующий фильтр по поиску
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((product) {
+        final name = (product['name'] ?? '').toLowerCase();
+        final category = (product['category']?['name'] ?? '').toLowerCase();
+        final query = _searchQuery.toLowerCase();
+        return name.contains(query) || category.contains(query);
+      }).toList();
+    }
+
+    return filtered;
   }
 
   Color _getCategoryColor(String? category) {
@@ -1287,48 +1310,72 @@ class _ProductsManagementScreenState extends State<_ProductsManagementScreen> {
           Container(
             padding: EdgeInsets.all(16),
             color: Colors.white,
-            child: Row(
+            child: Column(
               children: [
-                // Поиск
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Поиск товара...',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                Row(
+                  children: [
+                    // Поиск
+                    Expanded(
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Поиск товара...',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                        ),
+                        onChanged: (value) {
+                          setState(() => _searchQuery = value);
+                        },
+                      ),
                     ),
-                    onChanged: (value) {
-                      setState(() => _searchQuery = value);
-                    },
-                  ),
+                    SizedBox(width: 16),
+                    // Сортировка
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButton<String>(
+                        value: _sortBy,
+                        underline: SizedBox(),
+                        items: [
+                          DropdownMenuItem(
+                              value: 'name', child: Text('По названию')),
+                          DropdownMenuItem(
+                              value: 'stock', child: Text('По остаткам')),
+                          DropdownMenuItem(
+                              value: 'category', child: Text('По категории')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _sortBy = value!;
+                            _sortProducts();
+                          });
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(width: 16),
-                // Сортировка
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: DropdownButton<String>(
-                    value: _sortBy,
-                    underline: SizedBox(),
-                    items: [
-                      DropdownMenuItem(
-                          value: 'name', child: Text('По названию')),
-                      DropdownMenuItem(
-                          value: 'stock', child: Text('По остаткам')),
-                      DropdownMenuItem(
-                          value: 'category', child: Text('По категории')),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _sortBy = value!;
-                        _sortProducts();
-                      });
-                    },
-                  ),
+                // Checkbox для скрытия удалённых товаров
+                SizedBox(height: 8),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _hideInactive,
+                      onChanged: (value) {
+                        setState(() {
+                          _hideInactive = value ?? true;
+                        });
+                      },
+                    ),
+                    Text('Скрыть удалённые товары'),
+                    Spacer(),
+                    Text(
+                      'Показано: ${_filteredProducts.length} из ${_products.length}',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                  ],
                 ),
               ],
             ),
