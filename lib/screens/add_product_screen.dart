@@ -325,7 +325,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       final products = List<Map<String, dynamic>>.from(result['products']);
+      final excelCategories =
+          List<Map<String, dynamic>>.from(result['categories']);
+
       print('Excel парсинг: найдено ${products.length} товаров');
+      print('Excel парсинг: найдено ${excelCategories.length} категорий');
+
+      // ✨ ДОБАВЛЕНО: Автосоздание категорий
+      await _autoCreateCategoriesFromExcel(excelCategories);
+
+      // Перезагружаем категории после создания
+      await _loadCategories();
 
       // Обогащаем товары категориями из БД
       final enrichedProducts = await _enrichProductsWithCategories(products);
@@ -337,10 +347,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       // Показываем статистику
       if (mounted) {
+        final productsWithCategory = enrichedProducts
+            .where((p) => p['suggestedCategoryId'] != null)
+            .length;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Загружено ${products.length} товаров из Excel\n'
-                'Категорий: ${result['summary']['uniqueCategories']}'),
+            content: Text('✅ Загружено ${products.length} товаров\n'
+                '✓ С категорией: $productsWithCategory/${products.length}'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
@@ -365,6 +379,51 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+  /// ✨ НОВЫЙ: Автосоздание категорий из Excel
+  Future<void> _autoCreateCategoriesFromExcel(
+      List<Map<String, dynamic>> excelCategories) async {
+    print('\n🏷️ Автосоздание категорий из Excel...');
+
+    // Получаем уникальные категории уровня 1
+    final uniqueCategories = <String>{};
+    for (var cat in excelCategories) {
+      if (cat['level'] == 1) {
+        uniqueCategories.add(cat['name'] as String);
+      }
+    }
+
+    print('   Найдено уникальных категорий: ${uniqueCategories.length}');
+
+    int created = 0;
+    int skipped = 0;
+
+    for (var categoryName in uniqueCategories) {
+      try {
+        // Проверяем существует ли уже
+        final exists = _categories.any((c) =>
+            c['name'].toString().toLowerCase() == categoryName.toLowerCase());
+
+        if (exists) {
+          skipped++;
+          continue;
+        }
+
+        // Создаём новую категорию
+        await _apiService.createCategory(
+          categoryName,
+          description: 'Из Excel',
+        );
+
+        created++;
+        print('   ✅ Создана: "$categoryName"');
+      } catch (e) {
+        print('   ⚠️ Ошибка создания "$categoryName": $e');
+      }
+    }
+
+    print('✅ Создано: $created, Пропущено: $skipped');
+  }
+
   /// ✨ НОВЫЙ МЕТОД: Обогащение товаров категориями из БД
   Future<List<Map<String, dynamic>>> _enrichProductsWithCategories(
       List<Map<String, dynamic>> products) async {
@@ -380,9 +439,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
       if (excelCategory != null) {
         final matchedCategory = _findMatchingCategory(excelCategory.toString());
 
-        if (matchedCategory != null) {
-          suggestedCategoryId = matchedCategory['id'];
-          suggestedCategoryName = matchedCategory['name'];
+        if (excelCategory != null) {
+          // Сначала ищем по точному совпадению
+          final exactMatch = _findCategoryByExactName(excelCategory.toString());
+
+          if (exactMatch != null) {
+            suggestedCategoryId = exactMatch['id'];
+            suggestedCategoryName = exactMatch['name'];
+          } else {
+            // Если не нашли - ищем по ключевым словам
+            final keywordMatch =
+                _findMatchingCategory(excelCategory.toString());
+            if (keywordMatch != null) {
+              suggestedCategoryId = keywordMatch['id'];
+              suggestedCategoryName = keywordMatch['name'];
+            }
+          }
         }
       }
 
@@ -396,6 +468,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
 
     return enriched;
+  }
+
+  /// ✨ НОВЫЙ: Поиск категории по точному названию
+  Map<String, dynamic>? _findCategoryByExactName(String excelCategoryName) {
+    final nameLower = excelCategoryName.toLowerCase().trim();
+
+    try {
+      final found = _categories.firstWhere(
+          (c) => c['name'].toString().toLowerCase().trim() == nameLower,
+          orElse: () => <String, dynamic>{});
+      return found.isNotEmpty ? found : null;
+    } catch (e) {
+      return null;
+    }
   }
 
   /// ✨ НОВЫЙ МЕТОД: Поиск похожей категории в БД
