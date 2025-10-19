@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../services/admin_api_service.dart';
+import '../services/excel_parser_service.dart'; // ✨ НОВОЕ
 
 class AddProductScreen extends StatefulWidget {
   @override
@@ -91,7 +92,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['csv', 'txt'],
+        allowedExtensions: ['csv', 'txt', 'xlsx', 'xls'], // ✨ ДОБАВЛЕНО
         allowMultiple: false,
       );
 
@@ -105,25 +106,31 @@ class _AddProductScreenState extends State<AddProductScreen> {
         print('Файл выбран: ${_selectedFile!.name}');
         print('Путь к файлу: ${_selectedFile!.path}');
 
-        // Отправляем файл на сервер для парсинга
-        try {
-          final response =
-              await _apiService.parseProductFile(_selectedFile!.path!);
-          print('Ответ сервера: $response');
+        final extension = _selectedFile!.extension?.toLowerCase();
+        if (extension == 'xlsx' || extension == 'xls') {
+          // ✨ НОВОЕ: Парсим Excel локально
+          await _parseExcelFile(_selectedFile!.path!);
+        } else {
+          // Отправляем файл на сервер для парсинга
+          try {
+            final response =
+                await _apiService.parseProductFile(_selectedFile!.path!);
+            print('Ответ сервера: $response');
 
-          setState(() {
-            _parsedItems =
-                List<Map<String, dynamic>>.from(response['items'] ?? []);
-            _isLoading = false;
-          });
+            setState(() {
+              _parsedItems =
+                  List<Map<String, dynamic>>.from(response['items'] ?? []);
+              _isLoading = false;
+            });
 
-          print('Распарсено товаров: ${_parsedItems.length}');
-        } catch (e) {
-          print('Ошибка при отправке на сервер: $e');
-          setState(() {
-            _error = 'Ошибка обработки файла';
-            _isLoading = false;
-          });
+            print('Распарсено товаров: ${_parsedItems.length}');
+          } catch (e) {
+            print('Ошибка при отправке на сервер: $e');
+            setState(() {
+              _error = 'Ошибка обработки файла';
+              _isLoading = false;
+            });
+          }
         }
       }
     } catch (e) {
@@ -306,6 +313,139 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
+  /// ✨ НОВЫЙ МЕТОД: Парсинг Excel файла локально
+  Future<void> _parseExcelFile(String filePath) async {
+    try {
+      print('📊 Парсим Excel файл локально...');
+
+      final result = await ExcelParserService.parseExcelFile(filePath);
+
+      if (!result['success']) {
+        throw Exception(result['error'] ?? 'Ошибка парсинга Excel');
+      }
+
+      final products = List<Map<String, dynamic>>.from(result['products']);
+      print('Excel парсинг: найдено ${products.length} товаров');
+
+      // Обогащаем товары категориями из БД
+      final enrichedProducts = await _enrichProductsWithCategories(products);
+
+      setState(() {
+        _parsedItems = enrichedProducts;
+        _isLoading = false;
+      });
+
+      // Показываем статистику
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Загружено ${products.length} товаров из Excel\n'
+                'Категорий: ${result['summary']['uniqueCategories']}'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Ошибка парсинга Excel: $e');
+      setState(() {
+        _error = 'Ошибка парсинга Excel: $e';
+        _isLoading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка парсинга Excel: $e'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  /// ✨ НОВЫЙ МЕТОД: Обогащение товаров категориями из БД
+  Future<List<Map<String, dynamic>>> _enrichProductsWithCategories(
+      List<Map<String, dynamic>> products) async {
+    final enriched = <Map<String, dynamic>>[];
+
+    for (var product in products) {
+      final excelCategory = product['category'];
+      final excelSubcategory = product['subcategory'];
+
+      int? suggestedCategoryId;
+      String? suggestedCategoryName;
+
+      if (excelCategory != null) {
+        final matchedCategory = _findMatchingCategory(excelCategory.toString());
+
+        if (matchedCategory != null) {
+          suggestedCategoryId = matchedCategory['id'];
+          suggestedCategoryName = matchedCategory['name'];
+        }
+      }
+
+      enriched.add({
+        ...product,
+        'suggestedCategoryId': suggestedCategoryId,
+        'suggestedCategoryName': suggestedCategoryName ?? 'Без категории',
+        'originalCategory': excelCategory,
+        'originalSubcategory': excelSubcategory,
+      });
+    }
+
+    return enriched;
+  }
+
+  /// ✨ НОВЫЙ МЕТОД: Поиск похожей категории в БД
+  Map<String, dynamic>? _findMatchingCategory(String categoryName) {
+    final nameLower = categoryName.toLowerCase();
+
+    // Словарь соответствий
+    final keywords = {
+      'молочные': 1,
+      'молоко': 1,
+      'кефир': 1,
+      'творог': 1,
+      'сметана': 1,
+      'мясо': 2,
+      'мясные': 2,
+      'птица': 2,
+      'курица': 2,
+      'говядина': 2,
+      'овощи': 3,
+      'фрукты': 3,
+      'хлеб': 4,
+      'выпечка': 4,
+      'хлебобулочные': 4,
+      'торты': 4,
+      'пирожные': 4,
+      'напитки': 5,
+      'вода': 5,
+      'сок': 5,
+      'бакалея': 6,
+      'крупы': 6,
+      'макароны': 6,
+    };
+
+    // Пытаемся найти ключевое слово в названии категории
+    for (var entry in keywords.entries) {
+      if (nameLower.contains(entry.key)) {
+        try {
+          final found = _categories.firstWhere((c) => c['id'] == entry.value,
+              orElse: () => <String, dynamic>{});
+          // Если нашли пустую мапу - значит не нашли категорию
+          return found.isNotEmpty ? found : null;
+        } catch (e) {
+          return null;
+        }
+      }
+    }
+
+    return null;
+  }
+
   Future<void> _deleteProduct(Map<String, dynamic> product) async {
     // Показываем диалог подтверждения
     final confirmed = await showDialog<bool>(
@@ -449,14 +589,54 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         ElevatedButton.icon(
                           onPressed: _isLoading ? null : _pickAndProcessFile,
                           icon: Icon(Icons.upload_file),
-                          label: Text('Загрузить файл (CSV/TXT)'),
+                          label: Text('Загрузить файл (CSV/Excel)'),
                         ),
                         if (_selectedFile != null) ...[
                           SizedBox(height: 8),
-                          Text(
-                            'Файл: ${_selectedFile!.name}',
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey[600]),
+                          Row(
+                            children: [
+                              // ✨ НОВОЕ: Чип с типом файла
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color:
+                                      _selectedFile!.extension?.toLowerCase() ==
+                                                  'xlsx' ||
+                                              _selectedFile!.extension
+                                                      ?.toLowerCase() ==
+                                                  'xls'
+                                          ? Colors.green[100]
+                                          : Colors.blue[100],
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _selectedFile!.extension?.toUpperCase() ??
+                                      'FILE',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: _selectedFile!.extension
+                                                    ?.toLowerCase() ==
+                                                'xlsx' ||
+                                            _selectedFile!.extension
+                                                    ?.toLowerCase() ==
+                                                'xls'
+                                        ? Colors.green[700]
+                                        : Colors.blue[700],
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Файл: ${_selectedFile!.name}',
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.grey[600]),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                         if (_error != null) ...[
@@ -503,22 +683,58 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                              'Цена: ${item['price']} ₽ / ${item['unit']}'),
+                                          SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Icon(Icons.attach_money,
+                                                  size: 14,
+                                                  color: Colors.grey[600]),
+                                              Text(
+                                                  '${item['price']} ₽ / ${item['unit']}'),
+                                              // ✨ НОВОЕ: Показываем остаток если есть
+                                              if (item['stock'] != null) ...[
+                                                SizedBox(width: 12),
+                                                Icon(Icons.inventory_2,
+                                                    size: 14,
+                                                    color: Colors.grey[600]),
+                                                Text('${item['stock']}',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                              ],
+                                            ],
+                                          ),
+                                          SizedBox(height: 4),
+                                          // ✨ НОВОЕ: Категория из Excel
+                                          if (item['originalCategory'] != null)
+                                            Text(
+                                              'Excel: ${item['originalCategory']}',
+                                              style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.blue[600]),
+                                            ),
+                                          // Предложенная категория из БД
                                           Container(
                                             padding: EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 2,
-                                            ),
+                                                horizontal: 8, vertical: 2),
                                             decoration: BoxDecoration(
-                                              color: Colors.blue[100],
+                                              color:
+                                                  item['suggestedCategoryId'] !=
+                                                          null
+                                                      ? Colors.green[100]
+                                                      : Colors.orange[100],
                                               borderRadius:
                                                   BorderRadius.circular(4),
                                             ),
                                             child: Text(
-                                              item['suggestedCategoryName'] ??
-                                                  'Без категории',
-                                              style: TextStyle(fontSize: 12),
+                                              'БД: ${item['suggestedCategoryName'] ?? 'Не определена'}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color:
+                                                    item['suggestedCategoryId'] !=
+                                                            null
+                                                        ? Colors.green[700]
+                                                        : Colors.orange[700],
+                                              ),
                                             ),
                                           ),
                                         ],

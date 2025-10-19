@@ -16,6 +16,9 @@ dependencies:
   
   # Хранение данных
   shared_preferences: ^2.2.2
+
+  
+  spreadsheet_decoder: ^2.2.0
   
   # UI компоненты
   data_table_2: ^2.5.9
