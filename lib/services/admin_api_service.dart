@@ -337,6 +337,16 @@ class AdminApiService {
     });
   }
 
+  /// Удалить категорию
+  Future<Map<String, dynamic>> deleteCategory(int categoryId) async {
+    return await _makeRequest('DELETE', '/auth/admin-categories/$categoryId');
+  }
+
+  /// Удалить все пустые категории
+  Future<Map<String, dynamic>> deleteAllEmptyCategories() async {
+    return await _makeRequest('DELETE', '/auth/admin-categories');
+  }
+
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ПАРТИЯМИ ===
 
   /// Получить список партий

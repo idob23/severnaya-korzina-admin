@@ -2,9 +2,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:severnaya_korzina_admin/services/excel_parser_service.dart';
 import 'dart:io';
 import '../services/admin_api_service.dart';
-import '../services/excel_parser_service.dart'; // ✨ НОВОЕ
+import 'manage_categories_screen.dart';
 
 class AddProductScreen extends StatefulWidget {
   @override
@@ -27,6 +28,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   int? _selectedCategoryFilter;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _excelCategories = [];
 
   @override
   void initState() {
@@ -37,6 +39,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<void> _loadInitialData() async {
     await _loadCategories();
     await _loadExistingProducts();
+  }
+
+  Future<void> _manageCategories() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ManageCategoriesScreen(),
+      ),
+    );
+
+    // Перезагружаем категории после возврата
+    await _loadCategories();
   }
 
   Future<void> _loadCategories() async {
@@ -190,6 +204,44 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
+  void _removeFromParsedList(int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить из списка?'),
+        content: Text(
+            'Товар "${_parsedItems[index]['name']}" будет убран из списка загруженных товаров.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _parsedItems.removeAt(index);
+              });
+              Navigator.pop(context);
+
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Товар удалён из списка'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _addToDatabase(Map<String, dynamic> item) async {
     // Проверяем что категория выбрана
     if (item['suggestedCategoryId'] == null) {
@@ -244,7 +296,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Добавить все товары?'),
-        content: Text('Будет добавлено ${_parsedItems.length} товаров'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Будет добавлено ${_parsedItems.length} товаров'),
+            SizedBox(height: 8),
+            if (_getUniqueExcelCategories().isNotEmpty)
+              Text(
+                'Новых категорий: ${_getUniqueExcelCategories().length}',
+                style:
+                    TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+              ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -256,7 +321,28 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
               int successCount = 0;
               int errorCount = 0;
+              int categoriesCreated = 0;
 
+              // ✅ ДОБАВЛЕНО: Сначала создаём недостающие категории
+              if (_excelCategories.isNotEmpty) {
+                print('\n🏷️ Создание категорий перед добавлением товаров...');
+                categoriesCreated =
+                    await _autoCreateCategoriesFromExcel(_excelCategories);
+
+                // Перезагружаем категории после создания
+                await _loadCategories();
+
+                // Обновляем сопоставление товаров с категориями
+                final reEnrichedProducts =
+                    await _enrichProductsWithCategories(_parsedItems);
+                setState(() {
+                  _parsedItems = reEnrichedProducts;
+                });
+
+                print('✅ Категории созданы, товары обновлены');
+              }
+
+              // Теперь добавляем товары
               for (var item in [..._parsedItems]) {
                 try {
                   // Проверяем что categoryId существует
@@ -284,17 +370,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 await _loadExistingProducts();
                 setState(() {
                   _parsedItems.clear();
+                  _excelCategories.clear(); // Очищаем также категории
                 });
               }
 
               if (mounted) {
-                // Проверяем что виджет еще существует
-                String message = successCount > 0
-                    ? 'Добавлено товаров: $successCount'
-                    : 'Не удалось добавить товары';
+                String message = '';
+                if (categoriesCreated > 0) {
+                  message += '✅ Создано категорий: $categoriesCreated\n';
+                }
+                message += successCount > 0
+                    ? '✅ Добавлено товаров: $successCount'
+                    : '❌ Не удалось добавить товары';
 
                 if (errorCount > 0) {
-                  message += ', ошибок: $errorCount';
+                  message += '\n⚠️ Ошибок: $errorCount';
                 }
 
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -302,6 +392,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     content: Text(message),
                     backgroundColor:
                         errorCount > 0 ? Colors.orange : Colors.green,
+                    duration: Duration(seconds: 5),
                   ),
                 );
               }
@@ -331,11 +422,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('Excel парсинг: найдено ${products.length} товаров');
       print('Excel парсинг: найдено ${excelCategories.length} категорий');
 
-      // ✨ ДОБАВЛЕНО: Автосоздание категорий
-      await _autoCreateCategoriesFromExcel(excelCategories);
-
-      // Перезагружаем категории после создания
-      await _loadCategories();
+      _excelCategories = excelCategories;
 
       // Обогащаем товары категориями из БД
       final enrichedProducts = await _enrichProductsWithCategories(products);
@@ -379,8 +466,25 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+// ✅ ИЗМЕНЕНИЕ 3: Добавляем метод получения уникальных категорий из Excel
+  Set<String> _getUniqueExcelCategories() {
+    final uniqueCategories = <String>{};
+    for (var cat in _excelCategories) {
+      if (cat['level'] == 1) {
+        final name = cat['name'] as String;
+        // Проверяем что такой категории еще нет в БД
+        final exists = _categories.any(
+            (c) => c['name'].toString().toLowerCase() == name.toLowerCase());
+        if (!exists) {
+          uniqueCategories.add(name);
+        }
+      }
+    }
+    return uniqueCategories;
+  }
+
   /// ✨ НОВЫЙ: Автосоздание категорий из Excel
-  Future<void> _autoCreateCategoriesFromExcel(
+  Future<int> _autoCreateCategoriesFromExcel(
       List<Map<String, dynamic>> excelCategories) async {
     print('\n🏷️ Автосоздание категорий из Excel...');
 
@@ -422,6 +526,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
 
     print('✅ Создано: $created, Пропущено: $skipped');
+    return created; // ✅ ДОБАВЛЕНО: возвращаем количество созданных
   }
 
   /// ✨ НОВЫЙ МЕТОД: Обогащение товаров категориями из БД
@@ -672,10 +777,32 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           ),
                         ),
                         SizedBox(height: 12),
-                        ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _pickAndProcessFile,
-                          icon: Icon(Icons.upload_file),
-                          label: Text('Загрузить файл (CSV/Excel)'),
+                        // ✨ НОВОЕ: Ряд с двумя кнопками
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed:
+                                    _isLoading ? null : _pickAndProcessFile,
+                                icon: Icon(Icons.upload_file),
+                                label: Text('Загрузить файл'),
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: Size(0, 40),
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              onPressed: _manageCategories,
+                              icon: Icon(Icons.category),
+                              label: Text('Категории'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                foregroundColor: Colors.white,
+                                minimumSize: Size(0, 40),
+                              ),
+                            ),
+                          ],
                         ),
                         if (_selectedFile != null) ...[
                           SizedBox(height: 8),
@@ -831,6 +958,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                           IconButton(
                                             icon: Icon(Icons.edit, size: 20),
                                             onPressed: () => _editItem(index),
+                                            tooltip: 'Редактировать',
+                                          ),
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.delete_outline,
+                                              color: Colors.red[400],
+                                              size: 20,
+                                            ),
+                                            onPressed: () =>
+                                                _removeFromParsedList(index),
+                                            tooltip: 'Убрать из списка',
                                           ),
                                           IconButton(
                                             icon: Icon(
@@ -840,6 +978,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                             ),
                                             onPressed: () =>
                                                 _addToDatabase(item),
+                                            tooltip: 'Добавить в базу',
                                           ),
                                         ],
                                       ),
