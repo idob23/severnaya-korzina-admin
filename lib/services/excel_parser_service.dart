@@ -210,7 +210,7 @@ class ExcelParserService {
               'price': price,
               'unit': unit?.trim() ?? 'шт',
               'code': code?.trim(),
-              'stock': _parseInt(stock),
+              'maxQuantity': _parseInt(stock),
               'inPackage': _parseInt(inPackage),
               'packagePrice': _parsePrice(packagePrice),
               'category': currentCategory,

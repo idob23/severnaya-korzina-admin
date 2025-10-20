@@ -578,6 +578,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           'description': item['description'] ?? '',
           'categoryId': categoryExists ? item['suggestedCategoryId'] : null,
           'minQuantity': 1,
+          'maxQuantity': item['maxQuantity'],
         });
       }
 
@@ -1510,12 +1511,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                               Text(
                                                   '${item['price']} ₽ / ${item['unit']}'),
                                               // ✨ НОВОЕ: Показываем остаток если есть
-                                              if (item['stock'] != null) ...[
+                                              if (item['maxQuantity'] !=
+                                                  null) ...[
                                                 SizedBox(width: 12),
                                                 Icon(Icons.inventory_2,
                                                     size: 14,
                                                     color: Colors.grey[600]),
-                                                Text('${item['stock']}',
+                                                Text('${item['maxQuantity']}',
                                                     style: TextStyle(
                                                         fontSize: 12)),
                                               ],

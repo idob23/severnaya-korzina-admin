@@ -80,7 +80,7 @@ class AdminApiService {
                 headers: _defaultHeaders,
                 body: body != null ? jsonEncode(body) : null,
               )
-              .timeout(Duration(seconds: 30));
+              .timeout(Duration(seconds: 120));
           break;
         case 'PUT':
           response = await _client
