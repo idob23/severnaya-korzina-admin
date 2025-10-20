@@ -263,6 +263,11 @@ class AdminApiService {
     return await _makeRequest('DELETE', '/admin/products/$productId');
   }
 
+  /// Удалить ВСЕ товары из БД (жёсткое удаление)
+  Future<Map<String, dynamic>> deleteAllProducts() async {
+    return await _makeRequest('DELETE', '/admin/products/delete-all');
+  }
+
   // === МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ РЕЖИМОМ ОБСЛУЖИВАНИЯ ===
 
   /// Получить статус режима обслуживания

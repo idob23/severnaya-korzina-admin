@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:severnaya_korzina_admin/services/excel_parser_service.dart';
 import 'dart:io';
+import 'dart:math';
 import '../services/admin_api_service.dart';
 import 'manage_categories_screen.dart';
 
@@ -23,6 +24,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   // Данные
   PlatformFile? _selectedFile;
   List<Map<String, dynamic>> _parsedItems = [];
+  Set<int> _selectedIndices = {}; // ✨ НОВОЕ: выбранные товары
   List<Map<String, dynamic>> _existingProducts = [];
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryFilter;
@@ -115,6 +117,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           _selectedFile = result.files.first;
           _isLoading = true;
           _error = null;
+          _selectedIndices.clear();
         });
 
         print('Файл выбран: ${_selectedFile!.name}');
@@ -404,6 +407,169 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
+  // ✨ НОВОЕ: Быстрый выбор первых N товаров
+  void _selectFirst(int count) {
+    int actualCount = count < _parsedItems.length ? count : _parsedItems.length;
+
+    setState(() {
+      _selectedIndices.clear();
+      for (int i = 0; i < actualCount; i++) {
+        _selectedIndices.add(i);
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Выбрано первых $actualCount товаров')),
+    );
+  }
+
+// ✨ НОВОЕ: Случайный выбор N товаров
+  void _selectRandom(int count) {
+    int actualCount = count < _parsedItems.length ? count : _parsedItems.length;
+
+    setState(() {
+      _selectedIndices.clear();
+      final random = Random();
+      final indices = List.generate(_parsedItems.length, (i) => i);
+      indices.shuffle(random);
+      _selectedIndices.addAll(indices.take(actualCount));
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Выбрано $actualCount случайных товаров')),
+    );
+  }
+
+// ✨ НОВОЕ: Выбор по категориям
+  void _selectByCategories(int totalCount) {
+    setState(() {
+      _selectedIndices.clear();
+
+      final Map<String?, List<int>> byCategory = {};
+      for (int i = 0; i < _parsedItems.length; i++) {
+        final category = _parsedItems[i]['originalCategory'] as String?;
+        byCategory.putIfAbsent(category, () => []).add(i);
+      }
+
+      final categoriesCount = byCategory.length;
+      final perCategory = (totalCount / categoriesCount).ceil();
+
+      for (var indices in byCategory.values) {
+        final take =
+            perCategory < indices.length ? perCategory : indices.length;
+        _selectedIndices.addAll(indices.take(take));
+        if (_selectedIndices.length >= totalCount) break;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content:
+              Text('Выбрано ${_selectedIndices.length} товаров по категориям')),
+    );
+  }
+
+// ✨ НОВОЕ: Выбрать все/снять все
+  void _toggleSelectAll() {
+    setState(() {
+      if (_selectedIndices.length == _parsedItems.length) {
+        _selectedIndices.clear();
+      } else {
+        _selectedIndices =
+            Set.from(List.generate(_parsedItems.length, (i) => i));
+      }
+    });
+  }
+
+// ✨ НОВОЕ: Добавление только выбранных товаров
+  void _addSelectedToDatabase() async {
+    if (_selectedIndices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Выберите товары для добавления'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Добавить выбранные товары?'),
+        content: Text(
+            'Будет добавлено ${_selectedIndices.length} товаров из ${_parsedItems.length}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    int successCount = 0;
+    int errorCount = 0;
+
+    final sortedIndices = _selectedIndices.toList()..sort();
+
+    for (var index in sortedIndices) {
+      final item = _parsedItems[index];
+      try {
+        final categoryExists =
+            _categories.any((cat) => cat['id'] == item['suggestedCategoryId']);
+
+        await _apiService.createProduct({
+          'name': item['name'],
+          'price': item['price'],
+          'unit': item['unit'],
+          'description': item['description'] ?? '',
+          'categoryId': categoryExists ? item['suggestedCategoryId'] : null,
+          'minQuantity': 1,
+        });
+        successCount++;
+      } catch (e) {
+        print('Ошибка добавления товара ${item['name']}: $e');
+        errorCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      await _loadExistingProducts();
+      setState(() {
+        final indicesToRemove = _selectedIndices.toList()
+          ..sort((a, b) => b.compareTo(a));
+        for (var index in indicesToRemove) {
+          _parsedItems.removeAt(index);
+        }
+        _selectedIndices.clear();
+      });
+    }
+
+    if (mounted) {
+      String message = successCount > 0
+          ? 'Добавлено товаров: $successCount'
+          : 'Не удалось добавить товары';
+
+      if (errorCount > 0) {
+        message += ', ошибок: $errorCount';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: errorCount > 0 ? Colors.orange : Colors.green,
+        ),
+      );
+    }
+  }
+
   /// ✨ НОВЫЙ МЕТОД: Парсинг Excel файла локально
   Future<void> _parseExcelFile(String filePath) async {
     try {
@@ -422,17 +588,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('Excel парсинг: найдено ${products.length} товаров');
       print('Excel парсинг: найдено ${excelCategories.length} категорий');
 
-      _excelCategories = excelCategories;
+      // ✨ НОВОЕ: Применяем 5% наценку к ценам
+      final productsWithMarkup = products.map((product) {
+        final originalPrice = product['price'] as double;
+        final newPrice = (originalPrice * 1.05).roundToDouble(); // +5%
+        return {
+          ...product,
+          'price': newPrice,
+          'originalPrice': originalPrice,
+        };
+      }).toList();
 
-      // Обогащаем товары категориями из БД
-      final enrichedProducts = await _enrichProductsWithCategories(products);
+      print('💰 Применена наценка 5% к ${productsWithMarkup.length} товарам');
+
+      // await _autoCreateCategoriesFromExcel(excelCategories);
+      // await _loadCategories();
+
+      final enrichedProducts =
+          await _enrichProductsWithCategories(productsWithMarkup);
 
       setState(() {
         _parsedItems = enrichedProducts;
         _isLoading = false;
       });
 
-      // Показываем статистику
       if (mounted) {
         final productsWithCategory = enrichedProducts
             .where((p) => p['suggestedCategoryId'] != null)
@@ -441,7 +620,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('✅ Загружено ${products.length} товаров\n'
-                '✓ С категорией: $productsWithCategory/${products.length}'),
+                '✓ С категорией: $productsWithCategory/${products.length}\n'
+                '💰 Наценка +5% применена'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
@@ -742,6 +922,232 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+  Future<void> _deleteAllProducts() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red, size: 28),
+            SizedBox(width: 12),
+            Text('Удалить ВСЕ товары?'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Это действие удалит ВСЕ товары из базы данных безвозвратно!',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange[300]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          color: Colors.orange[700], size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Проверки безопасности:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange[900],
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  Text('✓ Нет активных заказов',
+                      style: TextStyle(fontSize: 12)),
+                  Text('✓ Нет активных партий', style: TextStyle(fontSize: 12)),
+                  Text('✓ Все заказы завершены',
+                      style: TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red[300]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error, color: Colors.red[700], size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Это действие НЕЛЬЗЯ отменить!',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.red[900],
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text('Удалить ВСЁ'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Показываем индикатор загрузки
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Удаление всех товаров...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      print('Начинаем удаление ВСЕХ товаров');
+
+      final response = await _apiService.deleteAllProducts();
+
+      // Закрываем индикатор загрузки
+      Navigator.pop(context);
+
+      print('Результат: ${response}');
+
+      if (response['success']) {
+        final deletedCount = response['deleted'] ?? 0;
+
+        // Обновляем список товаров
+        await _loadExistingProducts();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Удалено товаров: $deletedCount'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      } else {
+        // Обработка ошибок с подсказками
+        final error = response['error'] ?? 'Неизвестная ошибка';
+        final hint = response['hint'] ?? '';
+        final activeOrders = response['activeOrders'];
+        final activeBatches = response['activeBatches'];
+
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.block, color: Colors.orange),
+                  SizedBox(width: 12),
+                  Text('Невозможно удалить'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(error, style: TextStyle(fontWeight: FontWeight.bold)),
+                  if (hint.isNotEmpty) ...[
+                    SizedBox(height: 12),
+                    Text(hint, style: TextStyle(color: Colors.grey[700])),
+                  ],
+                  if (activeOrders != null) ...[
+                    SizedBox(height: 12),
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text('Активных заказов: $activeOrders'),
+                    ),
+                  ],
+                  if (activeBatches != null) ...[
+                    SizedBox(height: 8),
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text('Активных партий: $activeBatches'),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Понятно'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Закрываем индикатор загрузки
+      Navigator.pop(context);
+
+      print('Ошибка удаления всех товаров: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -792,6 +1198,106 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               ),
                             ),
                             SizedBox(width: 8),
+                            // ✨ НОВОЕ: Панель быстрого выбора
+                            if (_parsedItems.isNotEmpty)
+                              Container(
+                                padding: EdgeInsets.all(12),
+                                color: Colors.blue[50],
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.filter_list,
+                                            size: 20, color: Colors.blue[700]),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Быстрый выбор',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue[700],
+                                          ),
+                                        ),
+                                        Spacer(),
+                                        Text(
+                                          'Загружено: ${_parsedItems.length} товаров',
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600]),
+                                        ),
+                                      ],
+                                    ),
+                                    SizedBox(height: 12),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        ElevatedButton.icon(
+                                          onPressed: () => _selectFirst(500),
+                                          icon: Icon(Icons.filter_1, size: 18),
+                                          label: Text('Первые 500'),
+                                          style: ElevatedButton.styleFrom(
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 8),
+                                          ),
+                                        ),
+                                        ElevatedButton.icon(
+                                          onPressed: () => _selectRandom(500),
+                                          icon: Icon(Icons.shuffle, size: 18),
+                                          label: Text('Случайные 500'),
+                                          style: ElevatedButton.styleFrom(
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 8),
+                                          ),
+                                        ),
+                                        ElevatedButton.icon(
+                                          onPressed: () =>
+                                              _selectByCategories(500),
+                                          icon: Icon(Icons.category, size: 18),
+                                          label: Text('По категориям'),
+                                          style: ElevatedButton.styleFrom(
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 8),
+                                          ),
+                                        ),
+                                        ElevatedButton.icon(
+                                          onPressed: _toggleSelectAll,
+                                          icon: Icon(
+                                            _selectedIndices.length ==
+                                                    _parsedItems.length
+                                                ? Icons.check_box
+                                                : Icons.check_box_outline_blank,
+                                            size: 18,
+                                          ),
+                                          label: Text(
+                                            _selectedIndices.length ==
+                                                    _parsedItems.length
+                                                ? 'Снять все'
+                                                : 'Выбрать все',
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.grey[700],
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 8),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Выбрано: ${_selectedIndices.length} из ${_parsedItems.length}',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: _selectedIndices.isEmpty
+                                            ? Colors.grey[600]
+                                            : Colors.blue[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ElevatedButton.icon(
                               onPressed: _manageCategories,
                               icon: Icon(Icons.category),
@@ -890,7 +1396,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                       horizontal: 8,
                                       vertical: 4,
                                     ),
+                                    color: _selectedIndices.contains(index)
+                                        ? Colors.blue[50]
+                                        : null,
                                     child: ListTile(
+                                      leading: Checkbox(
+                                        // ← ДОБАВЬ весь этот блок
+                                        value: _selectedIndices.contains(index),
+                                        onChanged: (value) {
+                                          setState(() {
+                                            if (value == true) {
+                                              _selectedIndices.add(index);
+                                            } else {
+                                              _selectedIndices.remove(index);
+                                            }
+                                          });
+                                        },
+                                      ),
                                       title: Text(item['name'] ?? ''),
                                       subtitle: Column(
                                         crossAxisAlignment:
@@ -995,14 +1517,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       color: Colors.grey[100],
                       child: Row(
                         children: [
-                          Text('Товаров: ${_parsedItems.length}'),
+                          Text(
+                            'Выбрано: ${_selectedIndices.length} товаров',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           Spacer(),
-                          ElevatedButton(
-                            onPressed: _addAllToDatabase,
+                          ElevatedButton.icon(
+                            onPressed: _selectedIndices.isEmpty
+                                ? null
+                                : _addSelectedToDatabase,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
+                              disabledBackgroundColor: Colors.grey[300],
                             ),
-                            child: Text('Добавить все'),
+                            icon: Icon(Icons.add_shopping_cart),
+                            label: Text('Добавить выбранные'),
                           ),
                         ],
                       ),
@@ -1161,17 +1690,36 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   padding: EdgeInsets.all(12),
                   color: Colors.green[100],
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(Icons.inventory, size: 16, color: Colors.green[700]),
-                      SizedBox(width: 8),
-                      Text(
-                        'Всего товаров в БД: ${_existingProducts.length}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green[700],
-                        ),
+                      Row(
+                        children: [
+                          Icon(Icons.inventory,
+                              size: 16, color: Colors.green[700]),
+                          SizedBox(width: 8),
+                          Text(
+                            'Всего товаров в БД: ${_existingProducts.length}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green[700],
+                            ),
+                          ),
+                        ],
                       ),
+                      if (_existingProducts.isNotEmpty)
+                        ElevatedButton.icon(
+                          onPressed: _deleteAllProducts,
+                          icon: Icon(Icons.delete_forever, size: 18),
+                          label: Text('Удалить все',
+                              style: TextStyle(fontSize: 12)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            minimumSize: Size(0, 32),
+                          ),
+                        ),
                     ],
                   ),
                 ),
