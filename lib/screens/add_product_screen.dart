@@ -514,18 +514,64 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     if (confirmed != true) return;
 
-    int successCount = 0;
-    int errorCount = 0;
+    // ✨ Создаём категории ПЕРЕД добавлением товаров (как было)
+    int categoriesCreated = 0;
+    if (_excelCategories.isNotEmpty) {
+      print('🏷️ Создаём категории из Excel...');
+      categoriesCreated =
+          await _autoCreateCategoriesFromExcel(_excelCategories);
+      if (categoriesCreated > 0) {
+        await _loadCategories();
+        final reEnriched = await _enrichProductsWithCategories(_parsedItems);
+        setState(() {
+          _parsedItems = reEnriched;
+        });
+      }
+    }
 
-    final sortedIndices = _selectedIndices.toList()..sort();
+    // ✨ Показываем диалог прогресса
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false,
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text(
+                    'Добавление ${_selectedIndices.length} товаров...',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Пожалуйста, подождите',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
 
-    for (var index in sortedIndices) {
-      final item = _parsedItems[index];
-      try {
+    try {
+      // ✨ ПОДГОТАВЛИВАЕМ товары для массового добавления
+      final productsToAdd = <Map<String, dynamic>>[];
+      final sortedIndices = _selectedIndices.toList()..sort();
+
+      for (var index in sortedIndices) {
+        final item = _parsedItems[index];
         final categoryExists =
             _categories.any((cat) => cat['id'] == item['suggestedCategoryId']);
 
-        await _apiService.createProduct({
+        productsToAdd.add({
           'name': item['name'],
           'price': item['price'],
           'unit': item['unit'],
@@ -533,40 +579,69 @@ class _AddProductScreenState extends State<AddProductScreen> {
           'categoryId': categoryExists ? item['suggestedCategoryId'] : null,
           'minQuantity': 1,
         });
-        successCount++;
-      } catch (e) {
-        print('Ошибка добавления товара ${item['name']}: $e');
-        errorCount++;
       }
-    }
 
-    if (successCount > 0) {
-      await _loadExistingProducts();
-      setState(() {
-        final indicesToRemove = _selectedIndices.toList()
-          ..sort((a, b) => b.compareTo(a));
-        for (var index in indicesToRemove) {
-          _parsedItems.removeAt(index);
+      // ✨ МАССОВОЕ ДОБАВЛЕНИЕ ОДНИМ ЗАПРОСОМ!
+      print('🚀 Массовое добавление ${productsToAdd.length} товаров...');
+      final result = await _apiService.bulkCreateProducts(productsToAdd);
+
+      Navigator.pop(context); // Закрываем диалог прогресса
+
+      final successCount = result['created'] ?? 0;
+      final errorCount = result['errors']?.length ?? 0;
+
+      if (successCount > 0) {
+        await _loadExistingProducts();
+        setState(() {
+          final indicesToRemove = _selectedIndices.toList()
+            ..sort((a, b) => b.compareTo(a));
+          for (var index in indicesToRemove) {
+            _parsedItems.removeAt(index);
+          }
+          _selectedIndices.clear();
+          _excelCategories.clear();
+        });
+      }
+
+      if (mounted) {
+        String message = '';
+        if (categoriesCreated > 0) {
+          message += '✅ Создано категорий: $categoriesCreated\n';
         }
-        _selectedIndices.clear();
-      });
-    }
+        message += successCount > 0
+            ? '✅ Добавлено товаров: $successCount'
+            : '❌ Не удалось добавить товары';
 
-    if (mounted) {
-      String message = successCount > 0
-          ? 'Добавлено товаров: $successCount'
-          : 'Не удалось добавить товары';
+        if (errorCount > 0) {
+          message += '\n⚠️ Ошибок: $errorCount';
+        }
 
-      if (errorCount > 0) {
-        message += ', ошибок: $errorCount';
+        // Показываем время если есть
+        if (result['duration'] != null) {
+          message += '\n⏱️ Время: ${result['duration']}';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: errorCount > 0 ? Colors.orange : Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
       }
+    } catch (e) {
+      Navigator.pop(context); // Закрываем диалог прогресса
+      print('❌ Ошибка массового добавления: $e');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: errorCount > 0 ? Colors.orange : Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
@@ -584,6 +659,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final products = List<Map<String, dynamic>>.from(result['products']);
       final excelCategories =
           List<Map<String, dynamic>>.from(result['categories']);
+      // Сохраняем категории из Excel для создания при добавлении товаров
+      _excelCategories = excelCategories;
 
       print('Excel парсинг: найдено ${products.length} товаров');
       print('Excel парсинг: найдено ${excelCategories.length} категорий');
@@ -601,9 +678,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       print('💰 Применена наценка 5% к ${productsWithMarkup.length} товарам');
 
-      // await _autoCreateCategoriesFromExcel(excelCategories);
-      // await _loadCategories();
+      // ✨ Сохраняем категории из Excel
+      _excelCategories = excelCategories;
 
+// ✨ СОЗДАЁМ категории из Excel в БД ПЕРЕД обогащением товаров
+      print('🏷️ Создаём категории из Excel в БД...');
+      final createdCount =
+          await _autoCreateCategoriesFromExcel(excelCategories);
+      if (createdCount > 0) {
+        print('✅ Создано новых категорий: $createdCount');
+        // Перезагружаем категории из БД
+        await _loadCategories();
+      }
+
+// ✨ Теперь обогащаем товары - категории уже есть в БД!
       final enrichedProducts =
           await _enrichProductsWithCategories(productsWithMarkup);
 
@@ -1198,106 +1286,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               ),
                             ),
                             SizedBox(width: 8),
-                            // ✨ НОВОЕ: Панель быстрого выбора
-                            if (_parsedItems.isNotEmpty)
-                              Container(
-                                padding: EdgeInsets.all(12),
-                                color: Colors.blue[50],
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(Icons.filter_list,
-                                            size: 20, color: Colors.blue[700]),
-                                        SizedBox(width: 8),
-                                        Text(
-                                          'Быстрый выбор',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blue[700],
-                                          ),
-                                        ),
-                                        Spacer(),
-                                        Text(
-                                          'Загружено: ${_parsedItems.length} товаров',
-                                          style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600]),
-                                        ),
-                                      ],
-                                    ),
-                                    SizedBox(height: 12),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        ElevatedButton.icon(
-                                          onPressed: () => _selectFirst(500),
-                                          icon: Icon(Icons.filter_1, size: 18),
-                                          label: Text('Первые 500'),
-                                          style: ElevatedButton.styleFrom(
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 8),
-                                          ),
-                                        ),
-                                        ElevatedButton.icon(
-                                          onPressed: () => _selectRandom(500),
-                                          icon: Icon(Icons.shuffle, size: 18),
-                                          label: Text('Случайные 500'),
-                                          style: ElevatedButton.styleFrom(
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 8),
-                                          ),
-                                        ),
-                                        ElevatedButton.icon(
-                                          onPressed: () =>
-                                              _selectByCategories(500),
-                                          icon: Icon(Icons.category, size: 18),
-                                          label: Text('По категориям'),
-                                          style: ElevatedButton.styleFrom(
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 8),
-                                          ),
-                                        ),
-                                        ElevatedButton.icon(
-                                          onPressed: _toggleSelectAll,
-                                          icon: Icon(
-                                            _selectedIndices.length ==
-                                                    _parsedItems.length
-                                                ? Icons.check_box
-                                                : Icons.check_box_outline_blank,
-                                            size: 18,
-                                          ),
-                                          label: Text(
-                                            _selectedIndices.length ==
-                                                    _parsedItems.length
-                                                ? 'Снять все'
-                                                : 'Выбрать все',
-                                          ),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.grey[700],
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 8),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Выбрано: ${_selectedIndices.length} из ${_parsedItems.length}',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                        color: _selectedIndices.isEmpty
-                                            ? Colors.grey[600]
-                                            : Colors.blue[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             ElevatedButton.icon(
                               onPressed: _manageCategories,
                               icon: Icon(Icons.category),
@@ -1375,6 +1363,101 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       ],
                     ),
                   ),
+// ✨ ПАНЕЛЬ БЫСТРОГО ВЫБОРА - ДОБАВЬ СЮДА
+                  if (_parsedItems.isNotEmpty)
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      color: Colors.blue[50],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.filter_list,
+                                  size: 20, color: Colors.blue[700]),
+                              SizedBox(width: 8),
+                              Text(
+                                'Быстрый выбор',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue[700],
+                                ),
+                              ),
+                              Spacer(),
+                              Text(
+                                'Загружено: ${_parsedItems.length} товаров',
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: () => _selectFirst(500),
+                                icon: Icon(Icons.filter_1, size: 18),
+                                label: Text('Первые 500'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () => _selectRandom(500),
+                                icon: Icon(Icons.shuffle, size: 18),
+                                label: Text('Случайные 500'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () => _selectByCategories(500),
+                                icon: Icon(Icons.category, size: 18),
+                                label: Text('По категориям'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: _toggleSelectAll,
+                                icon: Icon(
+                                  _selectedIndices.length == _parsedItems.length
+                                      ? Icons.check_box
+                                      : Icons.check_box_outline_blank,
+                                  size: 18,
+                                ),
+                                label: Text(
+                                  _selectedIndices.length == _parsedItems.length
+                                      ? 'Снять все'
+                                      : 'Выбрать все',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.grey[700],
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Выбрано: ${_selectedIndices.length} из ${_parsedItems.length}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: _selectedIndices.isEmpty
+                                  ? Colors.grey[600]
+                                  : Colors.blue[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
 
                   // Список загруженных товаров
                   Expanded(
