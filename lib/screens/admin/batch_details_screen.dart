@@ -4,6 +4,13 @@
 import 'package:flutter/material.dart';
 import '../../services/admin_api_service.dart';
 import '../../constants/order_status.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:universal_html/html.dart' as html;
+import 'package:flutter/services.dart';
 
 class BatchDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> batch;
@@ -646,6 +653,11 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
                       ),
                     ),
                     IconButton(
+                      icon: Icon(Icons.download),
+                      onPressed: () => _exportTotalOrderToFile(totalOrder),
+                      tooltip: 'Скачать файл',
+                    ),
+                    IconButton(
                       icon: Icon(Icons.close),
                       onPressed: () => Navigator.pop(context),
                     ),
@@ -812,6 +824,11 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.download),
+                      onPressed: () => _exportUserOrdersToFile(userOrders),
+                      tooltip: 'Скачать файл',
                     ),
                     IconButton(
                       icon: Icon(Icons.close),
@@ -1194,6 +1211,115 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
       // TODO: Реализовать возврат денег (пока заглушка)
       _showSnackBar(
           'Функция возврата денег будет реализована в следующей версии');
+    }
+  }
+
+  Future<void> _exportTotalOrderToFile(Map<String, dynamic> totalOrder) async {
+    try {
+      final items = totalOrder['items'] as List? ?? [];
+      final totalAmount = _safeDouble(totalOrder['totalAmount']);
+
+      String content = '═══════════════════════════════════════\n';
+      content += 'ОБЩИЙ ЗАКАЗ ПАРТИИ #${widget.batch['id']}\n';
+      content += '${widget.batch['title'] ?? 'Без названия'}\n';
+      content += '═══════════════════════════════════════\n\n';
+
+      for (int i = 0; i < items.length; i++) {
+        final item = items[i];
+        final product = item['product'] ?? {};
+        content += '${i + 1}. ${product['name'] ?? 'Товар'}\n';
+        content +=
+            '   Количество: ${item['totalQuantity']} ${product['unit'] ?? 'шт'}\n';
+        content +=
+            '   Сумма: ${_safeDouble(item['totalSum']).toStringAsFixed(0)} ₽\n\n';
+      }
+
+      content += '═══════════════════════════════════════\n';
+      content += 'ИТОГО: ${totalAmount.toStringAsFixed(0)} ₽\n';
+      content += '═══════════════════════════════════════\n';
+
+      await _saveAndShareFile(
+          content, 'obshiy_zakaz_${widget.batch['id']}.txt');
+    } catch (e) {
+      _showSnackBar('Ошибка экспорта: $e');
+    }
+  }
+
+  Future<void> _exportUserOrdersToFile(List userOrders) async {
+    try {
+      String content = '═══════════════════════════════════════\n';
+      content += 'ЗАКАЗЫ ПО ПОЛЬЗОВАТЕЛЯМ\n';
+      content += 'Партия #${widget.batch['id']}\n';
+      content += '${widget.batch['title'] ?? 'Без названия'}\n';
+      content += '═══════════════════════════════════════\n\n';
+
+      int userNumber = 1;
+      for (var userOrder in userOrders) {
+        // ✅ ПРАВИЛЬНАЯ СТРУКТУРА:
+        String userName = _safeString(userOrder['userName'], 'Без имени');
+        String phone = _safeString(userOrder['phone'], 'Не указан');
+        String address = _safeString(userOrder['address'], 'Не указан');
+        final orders = userOrder['orders'] as List? ?? [];
+        final items = userOrder['items'] as List? ?? [];
+        final totalAmount = _safeDouble(userOrder['totalAmount']);
+
+        content += '▶ $userNumber. $userName\n';
+        content += '   Телефон: $phone\n';
+        content += '   Адрес: $address\n';
+        content += '   Заказов: ${orders.length}\n\n';
+
+        // Товары (если есть в items)
+        if (items.isNotEmpty) {
+          for (var item in items) {
+            String productName = _safeString(item['productName'], 'Товар');
+            int quantity = _safeInt(item['quantity']);
+            String unit = _safeString(item['unit'], 'шт');
+            double price = _safeDouble(item['price']);
+
+            content +=
+                '   • $productName: $quantity $unit × ${price.toStringAsFixed(0)} ₽ = ${(quantity * price).toStringAsFixed(0)} ₽\n';
+          }
+        } else {
+          content += '   (Детали товаров недоступны)\n';
+        }
+
+        content += '\n   ИТОГО: ${totalAmount.toStringAsFixed(0)} ₽\n';
+        content += '─────────────────────────────────────\n\n';
+
+        userNumber++;
+      }
+
+      await _saveAndShareFile(
+          content, 'zakazy_polzovateley_${widget.batch['id']}.txt');
+    } catch (e) {
+      _showSnackBar('Ошибка экспорта: $e');
+      print('❌ Ошибка экспорта: $e');
+    }
+  }
+
+  Future<void> _saveAndShareFile(String content, String fileName) async {
+    try {
+      if (kIsWeb) {
+        // Для веб - download
+        final bytes = utf8.encode(content);
+        final blob = html.Blob([bytes]);
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.document.createElement('a') as html.AnchorElement
+          ..href = url
+          ..style.display = 'none'
+          ..download = fileName;
+        html.document.body?.children.add(anchor);
+        anchor.click();
+        html.document.body?.children.remove(anchor);
+        html.Url.revokeObjectUrl(url);
+        _showSnackBar('✅ Файл скачан: $fileName');
+      } else {
+        // Для десктопа/мобайла - копируем в буфер
+        await Clipboard.setData(ClipboardData(text: content));
+        _showSnackBar('✅ Текст скопирован в буфер обмена');
+      }
+    } catch (e) {
+      _showSnackBar('❌ Ошибка: $e');
     }
   }
 

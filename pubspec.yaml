@@ -10,12 +10,16 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.2
+
+  path_provider: ^2.1.1
+  share_plus: ^7.2.1
   
   # Управление состоянием
   provider: ^6.1.1
   
   # Хранение данных
   shared_preferences: ^2.2.2
+  universal_html: ^2.2.4
 
   
   spreadsheet_decoder: ^2.2.0

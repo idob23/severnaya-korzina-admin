@@ -233,6 +233,25 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
           // Фильтры
           _buildFilters(),
 
+          // ✅ ДОБАВЬ ЭТО:
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _loadData,
+                  icon: Icon(Icons.refresh, size: 18),
+                  label: Text('Обновить'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[600],
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           // Список заказов
           Expanded(
             child: _isLoading
