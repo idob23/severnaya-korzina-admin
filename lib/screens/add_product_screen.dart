@@ -46,9 +46,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<void> _manageCategories() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => ManageCategoriesScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => ManageCategoriesScreen()),
     );
 
     // Перезагружаем категории после возврата
@@ -59,8 +57,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
     try {
       final response = await _apiService.getCategories();
       setState(() {
-        _categories =
-            List<Map<String, dynamic>>.from(response['categories'] ?? []);
+        _categories = List<Map<String, dynamic>>.from(
+          response['categories'] ?? [],
+        );
       });
       print('Категории загружены: ${_categories.length}');
     } catch (e) {
@@ -90,8 +89,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('Товары загружены: ${response['products']?.length ?? 0}');
 
       setState(() {
-        _existingProducts =
-            List<Map<String, dynamic>>.from(response['products'] ?? []);
+        _existingProducts = List<Map<String, dynamic>>.from(
+          response['products'] ?? [],
+        );
         _isLoadingProducts = false;
       });
     } catch (e) {
@@ -130,13 +130,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
         } else {
           // Отправляем файл на сервер для парсинга
           try {
-            final response =
-                await _apiService.parseProductFile(_selectedFile!.path!);
+            final response = await _apiService.parseProductFile(
+              _selectedFile!.path!,
+            );
             print('Ответ сервера: $response');
 
             setState(() {
-              _parsedItems =
-                  List<Map<String, dynamic>>.from(response['items'] ?? []);
+              _parsedItems = List<Map<String, dynamic>>.from(
+                response['items'] ?? [],
+              );
               _isLoading = false;
             });
 
@@ -213,7 +215,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       builder: (context) => AlertDialog(
         title: Text('Удалить из списка?'),
         content: Text(
-            'Товар "${_parsedItems[index]['name']}" будет убран из списка загруженных товаров.'),
+          'Товар "${_parsedItems[index]['name']}" будет убран из списка загруженных товаров.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -235,9 +238,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 );
               }
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: Text('Удалить'),
           ),
         ],
@@ -308,8 +309,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
             if (_getUniqueExcelCategories().isNotEmpty)
               Text(
                 'Новых категорий: ${_getUniqueExcelCategories().length}',
-                style:
-                    TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.blue,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
           ],
         ),
@@ -329,15 +332,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
               // ✅ ДОБАВЛЕНО: Сначала создаём недостающие категории
               if (_excelCategories.isNotEmpty) {
                 print('\n🏷️ Создание категорий перед добавлением товаров...');
-                categoriesCreated =
-                    await _autoCreateCategoriesFromExcel(_excelCategories);
+                categoriesCreated = await _autoCreateCategoriesFromExcel(
+                  _excelCategories,
+                );
 
                 // Перезагружаем категории после создания
                 await _loadCategories();
 
                 // Обновляем сопоставление товаров с категориями
-                final reEnrichedProducts =
-                    await _enrichProductsWithCategories(_parsedItems);
+                final reEnrichedProducts = await _enrichProductsWithCategories(
+                  _parsedItems,
+                );
                 setState(() {
                   _parsedItems = reEnrichedProducts;
                 });
@@ -349,16 +354,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
               for (var item in [..._parsedItems]) {
                 try {
                   // Проверяем что categoryId существует
-                  final categoryExists = _categories
-                      .any((cat) => cat['id'] == item['suggestedCategoryId']);
+                  final categoryExists = _categories.any(
+                    (cat) => cat['id'] == item['suggestedCategoryId'],
+                  );
 
                   await _apiService.createProduct({
                     'name': item['name'],
                     'price': item['price'],
                     'unit': item['unit'],
                     'description': item['description'] ?? '',
-                    'categoryId':
-                        categoryExists ? item['suggestedCategoryId'] : null,
+                    'categoryId': categoryExists
+                        ? item['suggestedCategoryId']
+                        : null,
                     'minQuantity': 1,
                   });
                   successCount++;
@@ -393,8 +400,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(message),
-                    backgroundColor:
-                        errorCount > 0 ? Colors.orange : Colors.green,
+                    backgroundColor: errorCount > 0
+                        ? Colors.orange
+                        : Colors.green,
                     duration: Duration(seconds: 5),
                   ),
                 );
@@ -423,7 +431,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
-// ✨ НОВОЕ: Случайный выбор N товаров
+  // ✨ НОВОЕ: Случайный выбор N товаров
   void _selectRandom(int count) {
     int actualCount = count < _parsedItems.length ? count : _parsedItems.length;
 
@@ -440,7 +448,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
-// ✨ НОВОЕ: Выбор по категориям
+  // ✨ НОВОЕ: Выбор по категориям
   void _selectByCategories(int totalCount) {
     setState(() {
       _selectedIndices.clear();
@@ -455,8 +463,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final perCategory = (totalCount / categoriesCount).ceil();
 
       for (var indices in byCategory.values) {
-        final take =
-            perCategory < indices.length ? perCategory : indices.length;
+        final take = perCategory < indices.length
+            ? perCategory
+            : indices.length;
         _selectedIndices.addAll(indices.take(take));
         if (_selectedIndices.length >= totalCount) break;
       }
@@ -464,24 +473,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content:
-              Text('Выбрано ${_selectedIndices.length} товаров по категориям')),
+        content: Text(
+          'Выбрано ${_selectedIndices.length} товаров по категориям',
+        ),
+      ),
     );
   }
 
-// ✨ НОВОЕ: Выбрать все/снять все
+  // ✨ НОВОЕ: Выбрать все/снять все
   void _toggleSelectAll() {
     setState(() {
       if (_selectedIndices.length == _parsedItems.length) {
         _selectedIndices.clear();
       } else {
-        _selectedIndices =
-            Set.from(List.generate(_parsedItems.length, (i) => i));
+        _selectedIndices = Set.from(
+          List.generate(_parsedItems.length, (i) => i),
+        );
       }
     });
   }
 
-// ✨ НОВОЕ: Добавление только выбранных товаров
+  // ✨ НОВОЕ: Добавление только выбранных товаров
   void _addSelectedToDatabase() async {
     if (_selectedIndices.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -498,7 +510,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       builder: (context) => AlertDialog(
         title: Text('Добавить выбранные товары?'),
         content: Text(
-            'Будет добавлено ${_selectedIndices.length} товаров из ${_parsedItems.length}'),
+          'Будет добавлено ${_selectedIndices.length} товаров из ${_parsedItems.length}',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -518,8 +531,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
     int categoriesCreated = 0;
     if (_excelCategories.isNotEmpty) {
       print('🏷️ Создаём категории из Excel...');
-      categoriesCreated =
-          await _autoCreateCategoriesFromExcel(_excelCategories);
+      categoriesCreated = await _autoCreateCategoriesFromExcel(
+        _excelCategories,
+      );
       if (categoriesCreated > 0) {
         await _loadCategories();
         final reEnriched = await _enrichProductsWithCategories(_parsedItems);
@@ -568,8 +582,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       for (var index in sortedIndices) {
         final item = _parsedItems[index];
-        final categoryExists =
-            _categories.any((cat) => cat['id'] == item['suggestedCategoryId']);
+        final categoryExists = _categories.any(
+          (cat) => cat['id'] == item['suggestedCategoryId'],
+        );
 
         productsToAdd.add({
           'name': item['name'],
@@ -658,8 +673,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       final products = List<Map<String, dynamic>>.from(result['products']);
-      final excelCategories =
-          List<Map<String, dynamic>>.from(result['categories']);
+      final excelCategories = List<Map<String, dynamic>>.from(
+        result['categories'],
+      );
       // Сохраняем категории из Excel для создания при добавлении товаров
       _excelCategories = excelCategories;
 
@@ -669,12 +685,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // ✨ НОВОЕ: Применяем 5% наценку к ценам
       final productsWithMarkup = products.map((product) {
         final originalPrice = product['price'] as double;
-        final newPrice = (originalPrice * 1.05).roundToDouble(); // +5%
-        return {
-          ...product,
-          'price': newPrice,
-          'originalPrice': originalPrice,
-        };
+        final newPrice = (originalPrice * 1.00).roundToDouble(); // +5%
+        return {...product, 'price': newPrice, 'originalPrice': originalPrice};
       }).toList();
 
       print('💰 Применена наценка 5% к ${productsWithMarkup.length} товарам');
@@ -682,19 +694,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // ✨ Сохраняем категории из Excel
       _excelCategories = excelCategories;
 
-// ✨ СОЗДАЁМ категории из Excel в БД ПЕРЕД обогащением товаров
+      // ✨ СОЗДАЁМ категории из Excel в БД ПЕРЕД обогащением товаров
       print('🏷️ Создаём категории из Excel в БД...');
-      final createdCount =
-          await _autoCreateCategoriesFromExcel(excelCategories);
+      final createdCount = await _autoCreateCategoriesFromExcel(
+        excelCategories,
+      );
       if (createdCount > 0) {
         print('✅ Создано новых категорий: $createdCount');
         // Перезагружаем категории из БД
         await _loadCategories();
       }
 
-// ✨ Теперь обогащаем товары - категории уже есть в БД!
-      final enrichedProducts =
-          await _enrichProductsWithCategories(productsWithMarkup);
+      // ✨ Теперь обогащаем товары - категории уже есть в БД!
+      final enrichedProducts = await _enrichProductsWithCategories(
+        productsWithMarkup,
+      );
 
       setState(() {
         _parsedItems = enrichedProducts;
@@ -708,9 +722,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Загружено ${products.length} товаров\n'
-                '✓ С категорией: $productsWithCategory/${products.length}\n'
-                '💰 Наценка +5% применена'),
+            content: Text(
+              '✅ Загружено ${products.length} товаров\n'
+              '✓ С категорией: $productsWithCategory/${products.length}\n'
+              '💰 Наценка +5% применена',
+            ),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
@@ -735,7 +751,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
-// ✅ ИЗМЕНЕНИЕ 3: Добавляем метод получения уникальных категорий из Excel
+  // ✅ ИЗМЕНЕНИЕ 3: Добавляем метод получения уникальных категорий из Excel
   Set<String> _getUniqueExcelCategories() {
     final uniqueCategories = <String>{};
     for (var cat in _excelCategories) {
@@ -743,7 +759,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
         final name = cat['name'] as String;
         // Проверяем что такой категории еще нет в БД
         final exists = _categories.any(
-            (c) => c['name'].toString().toLowerCase() == name.toLowerCase());
+          (c) => c['name'].toString().toLowerCase() == name.toLowerCase(),
+        );
         if (!exists) {
           uniqueCategories.add(name);
         }
@@ -754,7 +771,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   /// ✨ НОВЫЙ: Автосоздание категорий из Excel
   Future<int> _autoCreateCategoriesFromExcel(
-      List<Map<String, dynamic>> excelCategories) async {
+    List<Map<String, dynamic>> excelCategories,
+  ) async {
     print('\n🏷️ Автосоздание категорий из Excel...');
 
     // Получаем уникальные категории уровня 1
@@ -773,8 +791,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     for (var categoryName in uniqueCategories) {
       try {
         // Проверяем существует ли уже
-        final exists = _categories.any((c) =>
-            c['name'].toString().toLowerCase() == categoryName.toLowerCase());
+        final exists = _categories.any(
+          (c) =>
+              c['name'].toString().toLowerCase() == categoryName.toLowerCase(),
+        );
 
         if (exists) {
           skipped++;
@@ -782,10 +802,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         }
 
         // Создаём новую категорию
-        await _apiService.createCategory(
-          categoryName,
-          description: 'Из Excel',
-        );
+        await _apiService.createCategory(categoryName, description: 'Из Excel');
 
         created++;
         print('   ✅ Создана: "$categoryName"');
@@ -800,7 +817,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   /// ✨ НОВЫЙ МЕТОД: Обогащение товаров категориями из БД
   Future<List<Map<String, dynamic>>> _enrichProductsWithCategories(
-      List<Map<String, dynamic>> products) async {
+    List<Map<String, dynamic>> products,
+  ) async {
     final enriched = <Map<String, dynamic>>[];
 
     for (var product in products) {
@@ -822,8 +840,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
             suggestedCategoryName = exactMatch['name'];
           } else {
             // Если не нашли - ищем по ключевым словам
-            final keywordMatch =
-                _findMatchingCategory(excelCategory.toString());
+            final keywordMatch = _findMatchingCategory(
+              excelCategory.toString(),
+            );
             if (keywordMatch != null) {
               suggestedCategoryId = keywordMatch['id'];
               suggestedCategoryName = keywordMatch['name'];
@@ -850,8 +869,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     try {
       final found = _categories.firstWhere(
-          (c) => c['name'].toString().toLowerCase().trim() == nameLower,
-          orElse: () => <String, dynamic>{});
+        (c) => c['name'].toString().toLowerCase().trim() == nameLower,
+        orElse: () => <String, dynamic>{},
+      );
       return found.isNotEmpty ? found : null;
     } catch (e) {
       return null;
@@ -893,8 +913,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     for (var entry in keywords.entries) {
       if (nameLower.contains(entry.key)) {
         try {
-          final found = _categories.firstWhere((c) => c['id'] == entry.value,
-              orElse: () => <String, dynamic>{});
+          final found = _categories.firstWhere(
+            (c) => c['id'] == entry.value,
+            orElse: () => <String, dynamic>{},
+          );
           // Если нашли пустую мапу - значит не нашли категорию
           return found.isNotEmpty ? found : null;
         } catch (e) {
@@ -962,9 +984,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: Text('Удалить'),
           ),
         ],
@@ -1028,10 +1048,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           children: [
             Text(
               'Это действие удалит ВСЕ товары из базы данных безвозвратно!',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             ),
             SizedBox(height: 16),
             Container(
@@ -1046,8 +1063,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_outline,
-                          color: Colors.orange[700], size: 20),
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.orange[700],
+                        size: 20,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'Проверки безопасности:',
@@ -1059,11 +1079,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     ],
                   ),
                   SizedBox(height: 8),
-                  Text('✓ Нет активных заказов',
-                      style: TextStyle(fontSize: 12)),
+                  Text(
+                    '✓ Нет активных заказов',
+                    style: TextStyle(fontSize: 12),
+                  ),
                   Text('✓ Нет активных партий', style: TextStyle(fontSize: 12)),
-                  Text('✓ Все заказы завершены',
-                      style: TextStyle(fontSize: 12)),
+                  Text(
+                    '✓ Все заказы завершены',
+                    style: TextStyle(fontSize: 12),
+                  ),
                 ],
               ),
             ),
@@ -1101,9 +1125,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: Text('Удалить ВСЁ'),
           ),
         ],
@@ -1251,9 +1273,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             flex: 1,
             child: Container(
               decoration: BoxDecoration(
-                border: Border(
-                  right: BorderSide(color: Colors.grey[300]!),
-                ),
+                border: Border(right: BorderSide(color: Colors.grey[300]!)),
               ),
               child: Column(
                 children: [
@@ -1277,8 +1297,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           children: [
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed:
-                                    _isLoading ? null : _pickAndProcessFile,
+                                onPressed: _isLoading
+                                    ? null
+                                    : _pickAndProcessFile,
                                 icon: Icon(Icons.upload_file),
                                 label: Text('Загрузить файл'),
                                 style: ElevatedButton.styleFrom(
@@ -1306,16 +1327,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               // ✨ НОВОЕ: Чип с типом файла
                               Container(
                                 padding: EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color:
                                       _selectedFile!.extension?.toLowerCase() ==
-                                                  'xlsx' ||
-                                              _selectedFile!.extension
-                                                      ?.toLowerCase() ==
-                                                  'xls'
-                                          ? Colors.green[100]
-                                          : Colors.blue[100],
+                                              'xlsx' ||
+                                          _selectedFile!.extension
+                                                  ?.toLowerCase() ==
+                                              'xls'
+                                      ? Colors.green[100]
+                                      : Colors.blue[100],
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
@@ -1324,7 +1347,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
-                                    color: _selectedFile!.extension
+                                    color:
+                                        _selectedFile!.extension
                                                     ?.toLowerCase() ==
                                                 'xlsx' ||
                                             _selectedFile!.extension
@@ -1340,7 +1364,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 child: Text(
                                   'Файл: ${_selectedFile!.name}',
                                   style: TextStyle(
-                                      fontSize: 12, color: Colors.grey[600]),
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -1364,7 +1390,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       ],
                     ),
                   ),
-// ✨ ПАНЕЛЬ БЫСТРОГО ВЫБОРА - ДОБАВЬ СЮДА
+                  // ✨ ПАНЕЛЬ БЫСТРОГО ВЫБОРА - ДОБАВЬ СЮДА
                   if (_parsedItems.isNotEmpty)
                     Container(
                       padding: EdgeInsets.all(12),
@@ -1374,8 +1400,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.filter_list,
-                                  size: 20, color: Colors.blue[700]),
+                              Icon(
+                                Icons.filter_list,
+                                size: 20,
+                                color: Colors.blue[700],
+                              ),
                               SizedBox(width: 8),
                               Text(
                                 'Быстрый выбор',
@@ -1388,7 +1417,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               Text(
                                 'Загружено: ${_parsedItems.length} товаров',
                                 style: TextStyle(
-                                    fontSize: 12, color: Colors.grey[600]),
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
                               ),
                             ],
                           ),
@@ -1403,7 +1434,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 label: Text('Первые 500'),
                                 style: ElevatedButton.styleFrom(
                                   padding: EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                 ),
                               ),
                               ElevatedButton.icon(
@@ -1412,7 +1445,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 label: Text('Случайные 500'),
                                 style: ElevatedButton.styleFrom(
                                   padding: EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                 ),
                               ),
                               ElevatedButton.icon(
@@ -1421,7 +1456,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 label: Text('По категориям'),
                                 style: ElevatedButton.styleFrom(
                                   padding: EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                 ),
                               ),
                               ElevatedButton.icon(
@@ -1440,7 +1477,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.grey[700],
                                   padding: EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1465,134 +1504,142 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     child: _isLoading
                         ? Center(child: CircularProgressIndicator())
                         : _parsedItems.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'Загрузите файл для начала работы',
-                                  style: TextStyle(color: Colors.grey),
+                        ? Center(
+                            child: Text(
+                              'Загрузите файл для начала работы',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _parsedItems.length,
+                            itemBuilder: (context, index) {
+                              final item = _parsedItems[index];
+                              return Card(
+                                margin: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
                                 ),
-                              )
-                            : ListView.builder(
-                                itemCount: _parsedItems.length,
-                                itemBuilder: (context, index) {
-                                  final item = _parsedItems[index];
-                                  return Card(
-                                    margin: EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    color: _selectedIndices.contains(index)
-                                        ? Colors.blue[50]
-                                        : null,
-                                    child: ListTile(
-                                      leading: Checkbox(
-                                        // ← ДОБАВЬ весь этот блок
-                                        value: _selectedIndices.contains(index),
-                                        onChanged: (value) {
-                                          setState(() {
-                                            if (value == true) {
-                                              _selectedIndices.add(index);
-                                            } else {
-                                              _selectedIndices.remove(index);
-                                            }
-                                          });
-                                        },
-                                      ),
-                                      title: Text(item['name'] ?? ''),
-                                      subtitle: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                color: _selectedIndices.contains(index)
+                                    ? Colors.blue[50]
+                                    : null,
+                                child: ListTile(
+                                  leading: Checkbox(
+                                    // ← ДОБАВЬ весь этот блок
+                                    value: _selectedIndices.contains(index),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        if (value == true) {
+                                          _selectedIndices.add(index);
+                                        } else {
+                                          _selectedIndices.remove(index);
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  title: Text(item['name'] ?? ''),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      SizedBox(height: 4),
+                                      Row(
                                         children: [
-                                          SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(Icons.attach_money,
-                                                  size: 14,
-                                                  color: Colors.grey[600]),
-                                              Text(
-                                                  '${item['price']} ₽ / ${item['unit']}'),
-                                              // ✨ НОВОЕ: Показываем остаток если есть
-                                              if (item['maxQuantity'] !=
-                                                  null) ...[
-                                                SizedBox(width: 12),
-                                                Icon(Icons.inventory_2,
-                                                    size: 14,
-                                                    color: Colors.grey[600]),
-                                                Text('${item['maxQuantity']}',
-                                                    style: TextStyle(
-                                                        fontSize: 12)),
-                                              ],
-                                            ],
+                                          Icon(
+                                            Icons.attach_money,
+                                            size: 14,
+                                            color: Colors.grey[600],
                                           ),
-                                          SizedBox(height: 4),
-                                          // ✨ НОВОЕ: Категория из Excel
-                                          if (item['originalCategory'] != null)
+                                          Text(
+                                            '${item['price']} ₽ / ${item['unit']}',
+                                          ),
+                                          // ✨ НОВОЕ: Показываем остаток если есть
+                                          if (item['maxQuantity'] != null) ...[
+                                            SizedBox(width: 12),
+                                            Icon(
+                                              Icons.inventory_2,
+                                              size: 14,
+                                              color: Colors.grey[600],
+                                            ),
                                             Text(
-                                              'Excel: ${item['originalCategory']}',
-                                              style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.blue[600]),
+                                              '${item['maxQuantity']}',
+                                              style: TextStyle(fontSize: 12),
                                             ),
-                                          // Предложенная категория из БД
-                                          Container(
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: 8, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color:
-                                                  item['suggestedCategoryId'] !=
-                                                          null
-                                                      ? Colors.green[100]
-                                                      : Colors.orange[100],
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                            ),
-                                            child: Text(
-                                              'БД: ${item['suggestedCategoryName'] ?? 'Не определена'}',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color:
-                                                    item['suggestedCategoryId'] !=
-                                                            null
-                                                        ? Colors.green[700]
-                                                        : Colors.orange[700],
-                                              ),
-                                            ),
-                                          ),
+                                          ],
                                         ],
                                       ),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          IconButton(
-                                            icon: Icon(Icons.edit, size: 20),
-                                            onPressed: () => _editItem(index),
-                                            tooltip: 'Редактировать',
+                                      SizedBox(height: 4),
+                                      // ✨ НОВОЕ: Категория из Excel
+                                      if (item['originalCategory'] != null)
+                                        Text(
+                                          'Excel: ${item['originalCategory']}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.blue[600],
                                           ),
-                                          IconButton(
-                                            icon: Icon(
-                                              Icons.delete_outline,
-                                              color: Colors.red[400],
-                                              size: 20,
-                                            ),
-                                            onPressed: () =>
-                                                _removeFromParsedList(index),
-                                            tooltip: 'Убрать из списка',
+                                        ),
+                                      // Предложенная категория из БД
+                                      Container(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color:
+                                              item['suggestedCategoryId'] !=
+                                                  null
+                                              ? Colors.green[100]
+                                              : Colors.orange[100],
+                                          borderRadius: BorderRadius.circular(
+                                            4,
                                           ),
-                                          IconButton(
-                                            icon: Icon(
-                                              Icons.add_circle,
-                                              color: Colors.green,
-                                              size: 20,
-                                            ),
-                                            onPressed: () =>
-                                                _addToDatabase(item),
-                                            tooltip: 'Добавить в базу',
+                                        ),
+                                        child: Text(
+                                          'БД: ${item['suggestedCategoryName'] ?? 'Не определена'}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color:
+                                                item['suggestedCategoryId'] !=
+                                                    null
+                                                ? Colors.green[700]
+                                                : Colors.orange[700],
                                           ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              ),
+                                    ],
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(Icons.edit, size: 20),
+                                        onPressed: () => _editItem(index),
+                                        tooltip: 'Редактировать',
+                                      ),
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.delete_outline,
+                                          color: Colors.red[400],
+                                          size: 20,
+                                        ),
+                                        onPressed: () =>
+                                            _removeFromParsedList(index),
+                                        tooltip: 'Убрать из списка',
+                                      ),
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.add_circle,
+                                          color: Colors.green,
+                                          size: 20,
+                                        ),
+                                        onPressed: () => _addToDatabase(item),
+                                        tooltip: 'Добавить в базу',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                   ),
 
                   // Нижняя панель с действиями
@@ -1693,10 +1740,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             child: Text('Все категории'),
                           ),
                           ..._categories.map<DropdownMenuItem<int?>>(
-                              (cat) => DropdownMenuItem<int?>(
-                                    value: cat['id'] as int?,
-                                    child: Text(cat['name'] as String),
-                                  )),
+                            (cat) => DropdownMenuItem<int?>(
+                              value: cat['id'] as int?,
+                              child: Text(cat['name'] as String),
+                            ),
+                          ),
                         ],
                         onChanged: (value) {
                           setState(() {
@@ -1713,61 +1761,63 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   child: _isLoadingProducts
                       ? Center(child: CircularProgressIndicator())
                       : _filteredProducts.isEmpty
-                          ? Center(
-                              child: Text(
-                                _selectedCategoryFilter != null
-                                    ? 'Нет товаров в выбранной категории'
-                                    : 'База данных пуста',
-                                style: TextStyle(color: Colors.grey),
+                      ? Center(
+                          child: Text(
+                            _selectedCategoryFilter != null
+                                ? 'Нет товаров в выбранной категории'
+                                : 'База данных пуста',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: _filteredProducts.length,
+                          itemBuilder: (context, index) {
+                            final product = _filteredProducts[index];
+                            return Card(
+                              margin: EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
                               ),
-                            )
-                          : ListView.builder(
-                              itemCount: _filteredProducts.length,
-                              itemBuilder: (context, index) {
-                                final product = _filteredProducts[index];
-                                return Card(
-                                  margin: EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
+                              color: Colors.green[50],
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: Colors.green[200],
+                                  child: Text(
+                                    '${product['id']}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  color: Colors.green[50],
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: Colors.green[200],
-                                      child: Text(
-                                        '${product['id']}',
+                                ),
+                                title: Text(product['name'] ?? ''),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Цена: ${product['price']} ₽ / ${product['unit'] ?? 'шт'}',
+                                    ),
+                                    if (product['category'] != null)
+                                      Text(
+                                        product['category']['name'],
                                         style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                          color: Colors.green[700],
                                         ),
                                       ),
-                                    ),
-                                    title: Text(product['name'] ?? ''),
-                                    subtitle: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                            'Цена: ${product['price']} ₽ / ${product['unit'] ?? 'шт'}'),
-                                        if (product['category'] != null)
-                                          Text(
-                                            product['category']['name'],
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.green[700],
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    trailing: IconButton(
-                                      icon: Icon(Icons.delete,
-                                          color: Colors.red[400]),
-                                      onPressed: () => _deleteProduct(product),
-                                    ),
+                                  ],
+                                ),
+                                trailing: IconButton(
+                                  icon: Icon(
+                                    Icons.delete,
+                                    color: Colors.red[400],
                                   ),
-                                );
-                              },
-                            ),
+                                  onPressed: () => _deleteProduct(product),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                 ),
 
                 // Информационная панель
@@ -1779,8 +1829,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.inventory,
-                              size: 16, color: Colors.green[700]),
+                          Icon(
+                            Icons.inventory,
+                            size: 16,
+                            color: Colors.green[700],
+                          ),
                           SizedBox(width: 8),
                           Text(
                             'Всего товаров в БД: ${_existingProducts.length}',
@@ -1795,13 +1848,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         ElevatedButton.icon(
                           onPressed: _deleteAllProducts,
                           icon: Icon(Icons.delete_forever, size: 18),
-                          label: Text('Удалить все',
-                              style: TextStyle(fontSize: 12)),
+                          label: Text(
+                            'Удалить все',
+                            style: TextStyle(fontSize: 12),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.red,
                             foregroundColor: Colors.white,
                             padding: EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                             minimumSize: Size(0, 32),
                           ),
                         ),
@@ -1851,11 +1908,13 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.product['name']);
-    _priceController =
-        TextEditingController(text: widget.product['price'].toString());
+    _priceController = TextEditingController(
+      text: widget.product['price'].toString(),
+    );
     _unitController = TextEditingController(text: widget.product['unit']);
-    _descriptionController =
-        TextEditingController(text: widget.product['description'] ?? '');
+    _descriptionController = TextEditingController(
+      text: widget.product['description'] ?? '',
+    );
     _selectedCategoryId = widget.product['suggestedCategoryId'];
     _localCategories = List.from(widget.categories);
   }
@@ -1923,7 +1982,8 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                   if (scaffoldMessenger != null) {
                     scaffoldMessenger.showSnackBar(
                       SnackBar(
-                          content: Text('Категория "$categoryName" создана')),
+                        content: Text('Категория "$categoryName" создана'),
+                      ),
                     );
                   }
                 }
@@ -2026,10 +2086,11 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                       ),
                       items: _localCategories
                           .map<DropdownMenuItem<int>>(
-                              (cat) => DropdownMenuItem<int>(
-                                    value: cat['id'] as int,
-                                    child: Text(cat['name'] as String),
-                                  ))
+                            (cat) => DropdownMenuItem<int>(
+                              value: cat['id'] as int,
+                              child: Text(cat['name'] as String),
+                            ),
+                          )
                           .toList(),
                       onChanged: (value) {
                         setState(() {
@@ -2046,8 +2107,9 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                   ),
                   SizedBox(width: 8),
                   IconButton(
-                    onPressed:
-                        _isCreatingCategory ? null : _showCreateCategoryDialog,
+                    onPressed: _isCreatingCategory
+                        ? null
+                        : _showCreateCategoryDialog,
                     icon: _isCreatingCategory
                         ? SizedBox(
                             width: 20,
