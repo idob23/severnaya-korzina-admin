@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:math';
 import '../services/admin_api_service.dart';
 import 'manage_categories_screen.dart';
+import '../services/category_mapper_service.dart';
 
 class AddProductScreen extends StatefulWidget {
   @override
@@ -363,9 +364,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     'price': item['price'],
                     'unit': item['unit'],
                     'description': item['description'] ?? '',
-                    'categoryId': categoryExists
-                        ? item['suggestedCategoryId']
-                        : null,
+                    'categoryId':
+                        categoryExists ? item['suggestedCategoryId'] : null,
                     'minQuantity': 1,
                   });
                   successCount++;
@@ -400,9 +400,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(message),
-                    backgroundColor: errorCount > 0
-                        ? Colors.orange
-                        : Colors.green,
+                    backgroundColor:
+                        errorCount > 0 ? Colors.orange : Colors.green,
                     duration: Duration(seconds: 5),
                   ),
                 );
@@ -463,9 +462,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final perCategory = (totalCount / categoriesCount).ceil();
 
       for (var indices in byCategory.values) {
-        final take = perCategory < indices.length
-            ? perCategory
-            : indices.length;
+        final take =
+            perCategory < indices.length ? perCategory : indices.length;
         _selectedIndices.addAll(indices.take(take));
         if (_selectedIndices.length >= totalCount) break;
       }
@@ -604,7 +602,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
       Navigator.pop(context); // Закрываем диалог прогресса
 
       final successCount = result['created'] ?? 0;
-      final errorCount = result['errors']?.length ?? 0;
+      final skippedCount = result['skipped'] ?? 0; // ← ДОБАВИТЬ
+// ✨ ИСПРАВЛЕНИЕ: errors может быть числом или массивом
+      final errorCount = result['errors'] is int
+          ? result['errors']
+          : (result['errors'] as List?)?.length ?? 0;
 
       if (successCount > 0) {
         await _loadExistingProducts();
@@ -624,12 +626,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
         if (categoriesCreated > 0) {
           message += '✅ Создано категорий: $categoriesCreated\n';
         }
-        message += successCount > 0
-            ? '✅ Добавлено товаров: $successCount'
-            : '❌ Не удалось добавить товары';
+
+        if (successCount > 0) {
+          message += '✅ Добавлено товаров: $successCount';
+        }
+
+        // ✨ ДОБАВИТЬ: Показываем пропущенные дубликаты
+        if (skippedCount > 0) {
+          message += message.isNotEmpty ? '\n' : '';
+          message += '⏭️ Пропущено дубликатов: $skippedCount';
+        }
 
         if (errorCount > 0) {
-          message += '\n⚠️ Ошибок: $errorCount';
+          message += message.isNotEmpty ? '\n' : '';
+          message += '⚠️ Ошибок: $errorCount';
+        }
+
+        // Если ничего не добавилось
+        if (successCount == 0 && skippedCount > 0) {
+          message = '✅ Все товары уже есть в базе\n⏭️ Пропущено: $skippedCount';
+        } else if (successCount == 0 && errorCount == 0) {
+          message = '❌ Не удалось добавить товары';
         }
 
         // Показываем время если есть
@@ -710,6 +727,37 @@ class _AddProductScreenState extends State<AddProductScreen> {
         productsWithMarkup,
       );
 
+// ✨ ДИАГНОСТИКА: Проверяем уникальность
+      print('\n📊 ДИАГНОСТИКА ТОВАРОВ:');
+      print('   После парсинга: ${productsWithMarkup.length}');
+      print('   После обогащения: ${enrichedProducts.length}');
+
+      final uniqueNamesBefore =
+          productsWithMarkup.map((p) => p['name']).toSet();
+      final uniqueNamesAfter = enrichedProducts.map((p) => p['name']).toSet();
+
+      print('   Уникальных названий ДО: ${uniqueNamesBefore.length}');
+      print('   Уникальных названий ПОСЛЕ: ${uniqueNamesAfter.length}');
+      print(
+          '   Дубликатов в прайсе: ${productsWithMarkup.length - uniqueNamesBefore.length}');
+
+// ✨ Показываем примеры дубликатов если есть
+      if (productsWithMarkup.length != uniqueNamesBefore.length) {
+        final nameCounts = <String, int>{};
+        for (var p in productsWithMarkup) {
+          final name = p['name'] as String;
+          nameCounts[name] = (nameCounts[name] ?? 0) + 1;
+        }
+
+        final duplicates =
+            nameCounts.entries.where((e) => e.value > 1).take(5).toList();
+
+        print('\n   📋 Примеры дубликатов:');
+        for (var dup in duplicates) {
+          print('      "${dup.key}" - встречается ${dup.value} раз');
+        }
+      }
+
       setState(() {
         _parsedItems = enrichedProducts;
         _isLoading = false;
@@ -771,82 +819,125 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   /// ✨ НОВЫЙ: Автосоздание категорий из Excel
   Future<int> _autoCreateCategoriesFromExcel(
-    List<Map<String, dynamic>> excelCategories,
-  ) async {
-    print('\n🏷️ Автосоздание категорий из Excel...');
+      List<Map<String, dynamic>> excelCategories) async {
+    print('\n🏷️ Автосоздание категорий с умным маппингом...');
 
-    // Получаем уникальные категории уровня 1
-    final uniqueCategories = <String>{};
+    // ✨ Собираем оригинальные → упрощённые
+    final Map<String, String> categoryMapping = {};
+
     for (var cat in excelCategories) {
       if (cat['level'] == 1) {
-        uniqueCategories.add(cat['name'] as String);
+        final originalName = cat['name'] as String;
+
+        // ✨ Маппим в упрощённую категорию
+        final simplifiedName =
+            CategoryMapperService.mapToSimplifiedCategory(originalName);
+
+        if (simplifiedName != null) {
+          categoryMapping[simplifiedName] = originalName;
+          print('   📌 "$originalName" → "$simplifiedName"');
+        } else {
+          // Если не смаппилось - оставляем как есть
+          categoryMapping[originalName] = originalName;
+          print('   ⚠️ "$originalName" → (без изменений)');
+        }
       }
     }
 
-    print('   Найдено уникальных категорий: ${uniqueCategories.length}');
+    // ✨ Получаем уникальные упрощённые названия
+    final uniqueSimplified = categoryMapping.keys.toSet();
+    print(
+        '   📊 Всего категорий в прайсе: ${excelCategories.where((c) => c['level'] == 1).length}');
+    print('   ✅ Уникальных упрощённых: ${uniqueSimplified.length}');
 
     int created = 0;
     int skipped = 0;
 
-    for (var categoryName in uniqueCategories) {
+    // ✨ Создаём упрощённые категории
+    for (var simplifiedName in uniqueSimplified) {
       try {
-        // Проверяем существует ли уже
-        final exists = _categories.any(
-          (c) =>
-              c['name'].toString().toLowerCase() == categoryName.toLowerCase(),
-        );
+        final exists = _categories.any((c) =>
+            c['name'].toString().toLowerCase() == simplifiedName.toLowerCase());
 
         if (exists) {
           skipped++;
+          print('   ⏭️ Пропущена: "$simplifiedName"');
           continue;
         }
 
-        // Создаём новую категорию
-        await _apiService.createCategory(categoryName, description: 'Из Excel');
+        await _apiService.createCategory(
+          simplifiedName,
+          description: 'Автоматически из прайса',
+        );
 
         created++;
-        print('   ✅ Создана: "$categoryName"');
+        print('   ✅ Создана: "$simplifiedName"');
       } catch (e) {
-        print('   ⚠️ Ошибка создания "$categoryName": $e');
+        print('   ⚠️ Ошибка создания "$simplifiedName": $e');
       }
     }
 
-    print('✅ Создано: $created, Пропущено: $skipped');
-    return created; // ✅ ДОБАВЛЕНО: возвращаем количество созданных
+    print('📊 ИТОГО: Создано: $created, Пропущено: $skipped');
+    return created;
   }
 
   /// ✨ НОВЫЙ МЕТОД: Обогащение товаров категориями из БД
   Future<List<Map<String, dynamic>>> _enrichProductsWithCategories(
-    List<Map<String, dynamic>> products,
-  ) async {
+      List<Map<String, dynamic>> products) async {
+    print('\n🔗 Обогащение товаров категориями с маппингом...');
+
     final enriched = <Map<String, dynamic>>[];
+    int mappedCount = 0;
+    int exactMatchCount = 0;
+    int unmappedCount = 0;
 
     for (var product in products) {
       final excelCategory = product['category'];
-      final excelSubcategory = product['subcategory'];
 
       int? suggestedCategoryId;
       String? suggestedCategoryName;
+      String matchType = 'none';
 
       if (excelCategory != null) {
-        final matchedCategory = _findMatchingCategory(excelCategory.toString());
+        final excelCategoryStr = excelCategory.toString();
 
-        if (excelCategory != null) {
-          // Сначала ищем по точному совпадению
-          final exactMatch = _findCategoryByExactName(excelCategory.toString());
+        // ✨ ШАГ 1: Пробуем маппинг через CategoryMapperService
+        final simplifiedCategoryName =
+            CategoryMapperService.mapToSimplifiedCategory(excelCategoryStr);
 
-          if (exactMatch != null) {
+        if (simplifiedCategoryName != null) {
+          // Ищем ID этой упрощённой категории в БД
+          final matchedCategory = _categories.firstWhere(
+            (c) =>
+                c['name'].toString().toLowerCase() ==
+                simplifiedCategoryName.toLowerCase(),
+            orElse: () => <String, dynamic>{},
+          );
+
+          if (matchedCategory.isNotEmpty) {
+            suggestedCategoryId = matchedCategory['id'];
+            suggestedCategoryName = matchedCategory['name'];
+            matchType = 'mapped';
+            mappedCount++;
+          }
+        }
+
+        // ✨ ШАГ 2: Если не смаппилось - пробуем точное совпадение
+        if (suggestedCategoryId == null) {
+          final exactMatch = _categories.firstWhere(
+            (c) =>
+                c['name'].toString().toLowerCase() ==
+                excelCategoryStr.toLowerCase(),
+            orElse: () => <String, dynamic>{},
+          );
+
+          if (exactMatch.isNotEmpty) {
             suggestedCategoryId = exactMatch['id'];
             suggestedCategoryName = exactMatch['name'];
+            matchType = 'exact';
+            exactMatchCount++;
           } else {
-            // Если не нашли - ищем по ключевым словам
-            final keywordMatch = _findMatchingCategory(
-              excelCategory.toString(),
-            );
-            if (keywordMatch != null) {
-              suggestedCategoryId = keywordMatch['id'];
-              suggestedCategoryName = keywordMatch['name'];
-            }
+            unmappedCount++;
           }
         }
       }
@@ -856,9 +947,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'suggestedCategoryId': suggestedCategoryId,
         'suggestedCategoryName': suggestedCategoryName ?? 'Без категории',
         'originalCategory': excelCategory,
-        'originalSubcategory': excelSubcategory,
+        'matchType': matchType,
       });
     }
+
+    print('   ✅ Смаппировано: $mappedCount');
+    print('   🎯 Точное совпадение: $exactMatchCount');
+    print('   ⚠️ Без категории: $unmappedCount');
 
     return enriched;
   }
@@ -1297,9 +1392,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           children: [
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: _isLoading
-                                    ? null
-                                    : _pickAndProcessFile,
+                                onPressed:
+                                    _isLoading ? null : _pickAndProcessFile,
                                 icon: Icon(Icons.upload_file),
                                 label: Text('Загрузить файл'),
                                 style: ElevatedButton.styleFrom(
@@ -1333,12 +1427,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 decoration: BoxDecoration(
                                   color:
                                       _selectedFile!.extension?.toLowerCase() ==
-                                              'xlsx' ||
-                                          _selectedFile!.extension
-                                                  ?.toLowerCase() ==
-                                              'xls'
-                                      ? Colors.green[100]
-                                      : Colors.blue[100],
+                                                  'xlsx' ||
+                                              _selectedFile!.extension
+                                                      ?.toLowerCase() ==
+                                                  'xls'
+                                          ? Colors.green[100]
+                                          : Colors.blue[100],
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
@@ -1347,8 +1441,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
-                                    color:
-                                        _selectedFile!.extension
+                                    color: _selectedFile!.extension
                                                     ?.toLowerCase() ==
                                                 'xlsx' ||
                                             _selectedFile!.extension
@@ -1504,142 +1597,146 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     child: _isLoading
                         ? Center(child: CircularProgressIndicator())
                         : _parsedItems.isEmpty
-                        ? Center(
-                            child: Text(
-                              'Загрузите файл для начала работы',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          )
-                        : ListView.builder(
-                            itemCount: _parsedItems.length,
-                            itemBuilder: (context, index) {
-                              final item = _parsedItems[index];
-                              return Card(
-                                margin: EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
+                            ? Center(
+                                child: Text(
+                                  'Загрузите файл для начала работы',
+                                  style: TextStyle(color: Colors.grey),
                                 ),
-                                color: _selectedIndices.contains(index)
-                                    ? Colors.blue[50]
-                                    : null,
-                                child: ListTile(
-                                  leading: Checkbox(
-                                    // ← ДОБАВЬ весь этот блок
-                                    value: _selectedIndices.contains(index),
-                                    onChanged: (value) {
-                                      setState(() {
-                                        if (value == true) {
-                                          _selectedIndices.add(index);
-                                        } else {
-                                          _selectedIndices.remove(index);
-                                        }
-                                      });
-                                    },
-                                  ),
-                                  title: Text(item['name'] ?? ''),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      SizedBox(height: 4),
-                                      Row(
+                              )
+                            : ListView.builder(
+                                itemCount: _parsedItems.length,
+                                itemBuilder: (context, index) {
+                                  final item = _parsedItems[index];
+                                  return Card(
+                                    margin: EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    color: _selectedIndices.contains(index)
+                                        ? Colors.blue[50]
+                                        : null,
+                                    child: ListTile(
+                                      leading: Checkbox(
+                                        // ← ДОБАВЬ весь этот блок
+                                        value: _selectedIndices.contains(index),
+                                        onChanged: (value) {
+                                          setState(() {
+                                            if (value == true) {
+                                              _selectedIndices.add(index);
+                                            } else {
+                                              _selectedIndices.remove(index);
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      title: Text(item['name'] ?? ''),
+                                      subtitle: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          Icon(
-                                            Icons.attach_money,
-                                            size: 14,
-                                            color: Colors.grey[600],
+                                          SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.attach_money,
+                                                size: 14,
+                                                color: Colors.grey[600],
+                                              ),
+                                              Text(
+                                                '${item['price']} ₽ / ${item['unit']}',
+                                              ),
+                                              // ✨ НОВОЕ: Показываем остаток если есть
+                                              if (item['maxQuantity'] !=
+                                                  null) ...[
+                                                SizedBox(width: 12),
+                                                Icon(
+                                                  Icons.inventory_2,
+                                                  size: 14,
+                                                  color: Colors.grey[600],
+                                                ),
+                                                Text(
+                                                  '${item['maxQuantity']}',
+                                                  style:
+                                                      TextStyle(fontSize: 12),
+                                                ),
+                                              ],
+                                            ],
                                           ),
-                                          Text(
-                                            '${item['price']} ₽ / ${item['unit']}',
-                                          ),
-                                          // ✨ НОВОЕ: Показываем остаток если есть
-                                          if (item['maxQuantity'] != null) ...[
-                                            SizedBox(width: 12),
-                                            Icon(
-                                              Icons.inventory_2,
-                                              size: 14,
-                                              color: Colors.grey[600],
-                                            ),
+                                          SizedBox(height: 4),
+                                          // ✨ НОВОЕ: Категория из Excel
+                                          if (item['originalCategory'] != null)
                                             Text(
-                                              '${item['maxQuantity']}',
-                                              style: TextStyle(fontSize: 12),
+                                              'Excel: ${item['originalCategory']}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.blue[600],
+                                              ),
                                             ),
-                                          ],
+                                          // Предложенная категория из БД
+                                          Container(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  item['suggestedCategoryId'] !=
+                                                          null
+                                                      ? Colors.green[100]
+                                                      : Colors.orange[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                4,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'БД: ${item['suggestedCategoryName'] ?? 'Не определена'}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color:
+                                                    item['suggestedCategoryId'] !=
+                                                            null
+                                                        ? Colors.green[700]
+                                                        : Colors.orange[700],
+                                              ),
+                                            ),
+                                          ),
                                         ],
                                       ),
-                                      SizedBox(height: 4),
-                                      // ✨ НОВОЕ: Категория из Excel
-                                      if (item['originalCategory'] != null)
-                                        Text(
-                                          'Excel: ${item['originalCategory']}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.blue[600],
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: Icon(Icons.edit, size: 20),
+                                            onPressed: () => _editItem(index),
+                                            tooltip: 'Редактировать',
                                           ),
-                                        ),
-                                      // Предложенная категория из БД
-                                      Container(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              item['suggestedCategoryId'] !=
-                                                  null
-                                              ? Colors.green[100]
-                                              : Colors.orange[100],
-                                          borderRadius: BorderRadius.circular(
-                                            4,
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.delete_outline,
+                                              color: Colors.red[400],
+                                              size: 20,
+                                            ),
+                                            onPressed: () =>
+                                                _removeFromParsedList(index),
+                                            tooltip: 'Убрать из списка',
                                           ),
-                                        ),
-                                        child: Text(
-                                          'БД: ${item['suggestedCategoryName'] ?? 'Не определена'}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color:
-                                                item['suggestedCategoryId'] !=
-                                                    null
-                                                ? Colors.green[700]
-                                                : Colors.orange[700],
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.add_circle,
+                                              color: Colors.green,
+                                              size: 20,
+                                            ),
+                                            onPressed: () =>
+                                                _addToDatabase(item),
+                                            tooltip: 'Добавить в базу',
                                           ),
-                                        ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(Icons.edit, size: 20),
-                                        onPressed: () => _editItem(index),
-                                        tooltip: 'Редактировать',
-                                      ),
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.delete_outline,
-                                          color: Colors.red[400],
-                                          size: 20,
-                                        ),
-                                        onPressed: () =>
-                                            _removeFromParsedList(index),
-                                        tooltip: 'Убрать из списка',
-                                      ),
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.add_circle,
-                                          color: Colors.green,
-                                          size: 20,
-                                        ),
-                                        onPressed: () => _addToDatabase(item),
-                                        tooltip: 'Добавить в базу',
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                                    ),
+                                  );
+                                },
+                              ),
                   ),
 
                   // Нижняя панель с действиями
@@ -1761,63 +1858,64 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   child: _isLoadingProducts
                       ? Center(child: CircularProgressIndicator())
                       : _filteredProducts.isEmpty
-                      ? Center(
-                          child: Text(
-                            _selectedCategoryFilter != null
-                                ? 'Нет товаров в выбранной категории'
-                                : 'База данных пуста',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: _filteredProducts.length,
-                          itemBuilder: (context, index) {
-                            final product = _filteredProducts[index];
-                            return Card(
-                              margin: EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
+                          ? Center(
+                              child: Text(
+                                _selectedCategoryFilter != null
+                                    ? 'Нет товаров в выбранной категории'
+                                    : 'База данных пуста',
+                                style: TextStyle(color: Colors.grey),
                               ),
-                              color: Colors.green[50],
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: Colors.green[200],
-                                  child: Text(
-                                    '${product['id']}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                            )
+                          : ListView.builder(
+                              itemCount: _filteredProducts.length,
+                              itemBuilder: (context, index) {
+                                final product = _filteredProducts[index];
+                                return Card(
+                                  margin: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
                                   ),
-                                ),
-                                title: Text(product['name'] ?? ''),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Цена: ${product['price']} ₽ / ${product['unit'] ?? 'шт'}',
-                                    ),
-                                    if (product['category'] != null)
-                                      Text(
-                                        product['category']['name'],
+                                  color: Colors.green[50],
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: Colors.green[200],
+                                      child: Text(
+                                        '${product['id']}',
                                         style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.green[700],
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
                                         ),
                                       ),
-                                  ],
-                                ),
-                                trailing: IconButton(
-                                  icon: Icon(
-                                    Icons.delete,
-                                    color: Colors.red[400],
+                                    ),
+                                    title: Text(product['name'] ?? ''),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Цена: ${product['price']} ₽ / ${product['unit'] ?? 'шт'}',
+                                        ),
+                                        if (product['category'] != null)
+                                          Text(
+                                            product['category']['name'],
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.green[700],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    trailing: IconButton(
+                                      icon: Icon(
+                                        Icons.delete,
+                                        color: Colors.red[400],
+                                      ),
+                                      onPressed: () => _deleteProduct(product),
+                                    ),
                                   ),
-                                  onPressed: () => _deleteProduct(product),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                                );
+                              },
+                            ),
                 ),
 
                 // Информационная панель
@@ -2107,9 +2205,8 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                   ),
                   SizedBox(width: 8),
                   IconButton(
-                    onPressed: _isCreatingCategory
-                        ? null
-                        : _showCreateCategoryDialog,
+                    onPressed:
+                        _isCreatingCategory ? null : _showCreateCategoryDialog,
                     icon: _isCreatingCategory
                         ? SizedBox(
                             width: 20,

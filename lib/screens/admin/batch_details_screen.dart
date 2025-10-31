@@ -1226,12 +1226,15 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen> {
 
       for (int i = 0; i < items.length; i++) {
         final item = items[i];
-        final product = item['product'] ?? {};
-        content += '${i + 1}. ${product['name'] ?? 'Товар'}\n';
-        content +=
-            '   Количество: ${item['totalQuantity']} ${product['unit'] ?? 'шт'}\n';
-        content +=
-            '   Сумма: ${_safeDouble(item['totalSum']).toStringAsFixed(0)} ₽\n\n';
+        // ✅ ИСПРАВЛЕНО: используем item['productName'], item['quantity'], item['unit']
+        String productName = _safeString(item['productName'], 'Товар');
+        int quantity = _safeInt(item['quantity']);
+        String unit = _safeString(item['unit'], 'шт');
+        double totalSum = _safeDouble(item['totalSum']);
+
+        content += '${i + 1}. $productName\n';
+        content += '   Количество: $quantity $unit\n';
+        content += '   Сумма: ${totalSum.toStringAsFixed(0)} ₽\n\n';
       }
 
       content += '═══════════════════════════════════════\n';
