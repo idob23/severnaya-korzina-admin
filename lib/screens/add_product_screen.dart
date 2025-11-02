@@ -1823,6 +1823,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       // Фильтр по категории
                       DropdownButtonFormField<int?>(
                         value: _selectedCategoryFilter,
+                        isExpanded: true,
                         decoration: InputDecoration(
                           labelText: 'Фильтр по категории',
                           border: OutlineInputBorder(),

@@ -203,16 +203,52 @@ class ExcelParserService {
             continue;
           }
 
-          // Если есть цена - это товар
+          // // Если есть цена - это товар
+          // if (price != null && name != null && name.trim().isNotEmpty) {
+          //   final product = {
+          //     'name': name.trim(),
+          //     'price': price,
+          //     'unit': unit?.trim() ?? 'шт',
+          //     'code': code?.trim(),
+          //     'maxQuantity': _parseInt(stock),
+          //     'inPackage': _parseInt(inPackage),
+          //     'packagePrice': _parsePrice(packagePrice),
+          //     'category': currentCategory,
+          //     'subcategory': currentSubcategory,
+          //     'row': i + 1,
+          //     'isNew': true,
+          //     'isDuplicate': false,
+          //   };
+
+          //   products.add(product);
+          //   processedRows++;
+          // } else {
+          //   skippedRows++;
+          // }
+// 🎯 ИСПРАВЛЕНИЕ: Приоритет цене упаковки
+// Если есть цена - это товар
           if (price != null && name != null && name.trim().isNotEmpty) {
+            // Парсим данные упаковки
+            final parsedInPackage = _parseInt(inPackage);
+            final parsedPackagePrice = _parsePrice(packagePrice);
+
+            // Используем цену упаковки, если она есть
+            final finalPrice = parsedPackagePrice ?? price;
+
+            // Формируем единицу измерения
+            final finalUnit =
+                parsedPackagePrice != null && parsedInPackage != null
+                    ? 'уп ($parsedInPackage шт)'
+                    : (unit?.trim() ?? 'шт');
+
             final product = {
               'name': name.trim(),
-              'price': price,
-              'unit': unit?.trim() ?? 'шт',
+              'price': finalPrice,
+              'unit': finalUnit,
               'code': code?.trim(),
               'maxQuantity': _parseInt(stock),
-              'inPackage': _parseInt(inPackage),
-              'packagePrice': _parsePrice(packagePrice),
+              'inPackage': parsedInPackage,
+              'packagePrice': parsedPackagePrice,
               'category': currentCategory,
               'subcategory': currentSubcategory,
               'row': i + 1,
