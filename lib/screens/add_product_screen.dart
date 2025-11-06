@@ -8,6 +8,7 @@ import 'dart:math';
 import '../services/admin_api_service.dart';
 import 'manage_categories_screen.dart';
 import '../services/category_mapper_service.dart';
+import '../services/category_mapping_service.dart';
 
 class AddProductScreen extends StatefulWidget {
   @override
@@ -28,6 +29,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Set<int> _selectedIndices = {}; // ✨ НОВОЕ: выбранные товары
   List<Map<String, dynamic>> _existingProducts = [];
   List<Map<String, dynamic>> _categories = [];
+  Map<String, int> _categoryMappings = {}; // ← ДОБАВЬ ЭТУ СТРОКУ
+  bool _useMappings = false; // ← И ЭТУ СТРОКУ
   int? _selectedCategoryFilter;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -37,6 +40,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
   void initState() {
     super.initState();
     _loadInitialData();
+    _loadMappings();
+  }
+
+  // ← ДОБАВЬ ВЕСЬ ЭТОТ МЕТОД:
+  Future<void> _loadMappings() async {
+    try {
+      print('📥 Загрузка маппингов категорий...');
+      print('🌐 URL: ${CategoryMappingService.baseUrl}'); // ← ДОБАВЬ ЭТУ СТРОКУ
+      final mappings = await CategoryMappingService.loadMappings();
+
+      setState(() {
+        _categoryMappings = mappings;
+      });
+
+      print('✅ Загружено ${mappings.length} маппингов');
+      print(
+          '📋 Первые 3 маппинга: ${mappings.entries.take(3).toList()}'); // ← И ЭТУ
+    } catch (e) {
+      print('⚠️ Ошибка загрузки маппингов: $e');
+      print('⚠️ Stack trace: ${StackTrace.current}'); // ← И ЭТУ
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -343,6 +367,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 // Обновляем сопоставление товаров с категориями
                 final reEnrichedProducts = await _enrichProductsWithCategories(
                   _parsedItems,
+                  useMappings: _useMappings,
+                  mappings: _categoryMappings,
                 );
                 setState(() {
                   _parsedItems = reEnrichedProducts;
@@ -534,7 +560,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
       );
       if (categoriesCreated > 0) {
         await _loadCategories();
-        final reEnriched = await _enrichProductsWithCategories(_parsedItems);
+        final reEnriched = await _enrichProductsWithCategories(
+          _parsedItems,
+          useMappings: _useMappings,
+          mappings: _categoryMappings,
+        );
         setState(() {
           _parsedItems = reEnriched;
         });
@@ -725,6 +755,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // ✨ Теперь обогащаем товары - категории уже есть в БД!
       final enrichedProducts = await _enrichProductsWithCategories(
         productsWithMarkup,
+        useMappings: _useMappings,
+        mappings: _categoryMappings,
       );
 
 // ✨ ДИАГНОСТИКА: Проверяем уникальность
@@ -883,7 +915,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   /// ✨ НОВЫЙ МЕТОД: Обогащение товаров категориями из БД
   Future<List<Map<String, dynamic>>> _enrichProductsWithCategories(
-      List<Map<String, dynamic>> products) async {
+    List<Map<String, dynamic>> products, {
+    bool useMappings = true, // ← ДОБАВЬ ЭТИ
+    Map<String, int>? mappings, // ← ТРИ СТРОКИ
+  }) async {
     print('\n🔗 Обогащение товаров категориями с маппингом...');
 
     final enriched = <Map<String, dynamic>>[];
@@ -897,57 +932,52 @@ class _AddProductScreenState extends State<AddProductScreen> {
       int? suggestedCategoryId;
       String? suggestedCategoryName;
       String matchType = 'none';
+      int? categoryId;
 
-      if (excelCategory != null) {
-        final excelCategoryStr = excelCategory.toString();
+      // 1. Сначала пытаемся использовать маппинг
+      if (useMappings && mappings != null && excelCategory != null) {
+        categoryId = CategoryMappingService.findCategoryId(
+          excelCategory,
+          mappings,
+        );
 
-        // ✨ ШАГ 1: Пробуем маппинг через CategoryMapperService
-        final simplifiedCategoryName =
-            CategoryMapperService.mapToSimplifiedCategory(excelCategoryStr);
+        if (categoryId != null) {
+          mappedCount++;
+          print('   ✅ Маппинг: "$excelCategory" → категория #$categoryId');
+        }
+      }
 
-        if (simplifiedCategoryName != null) {
-          // Ищем ID этой упрощённой категории в БД
+      // 2. Fallback на старый метод CategoryMapperService
+      if (categoryId == null && excelCategory != null) {
+        final simplified = CategoryMapperService.mapToSimplifiedCategory(
+          excelCategory,
+        );
+
+        if (simplified != null) {
           final matchedCategory = _categories.firstWhere(
             (c) =>
-                c['name'].toString().toLowerCase() ==
-                simplifiedCategoryName.toLowerCase(),
+                c['name'].toString().toLowerCase() == simplified.toLowerCase(),
             orElse: () => <String, dynamic>{},
           );
 
           if (matchedCategory.isNotEmpty) {
-            suggestedCategoryId = matchedCategory['id'];
-            suggestedCategoryName = matchedCategory['name'];
-            matchType = 'mapped';
-            mappedCount++;
+            categoryId = matchedCategory['id'] as int;
+            exactMatchCount++;
           }
         }
+      }
 
-        // ✨ ШАГ 2: Если не смаппилось - пробуем точное совпадение
-        if (suggestedCategoryId == null) {
-          final exactMatch = _categories.firstWhere(
-            (c) =>
-                c['name'].toString().toLowerCase() ==
-                excelCategoryStr.toLowerCase(),
-            orElse: () => <String, dynamic>{},
-          );
-
-          if (exactMatch.isNotEmpty) {
-            suggestedCategoryId = exactMatch['id'];
-            suggestedCategoryName = exactMatch['name'];
-            matchType = 'exact';
-            exactMatchCount++;
-          } else {
-            unmappedCount++;
-          }
+      if (categoryId == null) {
+        unmappedCount++;
+        if (excelCategory != null) {
+          print('   ⚠️ НЕ СМАППИЛОСЬ: "$excelCategory"');
         }
       }
 
       enriched.add({
         ...product,
-        'suggestedCategoryId': suggestedCategoryId,
-        'suggestedCategoryName': suggestedCategoryName ?? 'Без категории',
+        'suggestedCategoryId': categoryId,
         'originalCategory': excelCategory,
-        'matchType': matchType,
       });
     }
 
