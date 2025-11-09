@@ -245,6 +245,9 @@ class ExcelParserService {
               'name': name.trim(),
               'price': finalPrice,
               'unit': finalUnit,
+              'basePrice': price, // ✅ ЭТА СТРОКА ЕСТЬ?
+              'baseUnit': unit?.trim(), // ✅ ЭТА СТРОКА ЕСТЬ?
+              'inPackage': parsedInPackage, // ✅ ЭТА СТРОКА ЕСТЬ?
               'code': code?.trim(),
               'maxQuantity': _parseInt(stock),
               'inPackage': parsedInPackage,

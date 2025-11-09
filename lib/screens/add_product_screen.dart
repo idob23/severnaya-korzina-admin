@@ -30,7 +30,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   List<Map<String, dynamic>> _existingProducts = [];
   List<Map<String, dynamic>> _categories = [];
   Map<String, int> _categoryMappings = {}; // ← ДОБАВЬ ЭТУ СТРОКУ
-  bool _useMappings = false; // ← И ЭТУ СТРОКУ
+  bool _useMappings = true; // ← И ЭТУ СТРОКУ
   int? _selectedCategoryFilter;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -614,10 +614,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
           (cat) => cat['id'] == item['suggestedCategoryId'],
         );
 
+// ✅ ОТЛАДКА
+        print('=== ITEM DEBUG ===');
+        print('name: ${item['name']}');
+        print('basePrice: ${item['basePrice']}');
+        print('baseUnit: ${item['baseUnit']}');
+        print('inPackage: ${item['inPackage']}');
+        print('==================');
+
         productsToAdd.add({
           'name': item['name'],
           'price': item['price'],
           'unit': item['unit'],
+          'basePrice': item['basePrice'], // ✅ ДОБАВИТЬ
+          'baseUnit': item['baseUnit'], // ✅ ДОБАВИТЬ
+          'inPackage': item['inPackage'], // ✅ ДОБАВИТЬ
           'description': item['description'] ?? '',
           'categoryId': categoryExists ? item['suggestedCategoryId'] : null,
           'minQuantity': 1,
@@ -933,6 +944,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
       String? suggestedCategoryName;
       String matchType = 'none';
       int? categoryId;
+      // ДОБАВЬ ЭТИ СТРОКИ:
+      if (excelCategory == '- Пирожные, десерты, пончики') {
+        print('🧪 ТЕСТ для "- Пирожные, десерты, пончики":');
+        print('   useMappings = $useMappings');
+        print('   mappings != null = ${mappings != null}');
+        print('   mappings.length = ${mappings?.length}');
+        print('   excelCategory = "$excelCategory"');
+      }
 
       // 1. Сначала пытаемся использовать маппинг
       if (useMappings && mappings != null && excelCategory != null) {
@@ -974,9 +993,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
         }
       }
 
+      // Находим название категории
+      String? categoryName;
+      if (categoryId != null) {
+        final category = _categories.firstWhere(
+          (c) => c['id'] == categoryId,
+          orElse: () => <String, dynamic>{},
+        );
+        categoryName = category['name'] as String?;
+      }
+
       enriched.add({
         ...product,
         'suggestedCategoryId': categoryId,
+        'suggestedCategoryName': categoryName, // ← ДОБАВЬ ЭТУ СТРОКУ
         'originalCategory': excelCategory,
       });
     }

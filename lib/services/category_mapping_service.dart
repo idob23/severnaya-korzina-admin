@@ -63,6 +63,7 @@ class CategoryMappingService {
     if (supplierCategory == null || supplierCategory.isEmpty) {
       return null;
     }
+    print('🔍 Ищем маппинг для: "$supplierCategory"');
 
     // 1. Точное совпадение
     if (mappings.containsKey(supplierCategory)) {
