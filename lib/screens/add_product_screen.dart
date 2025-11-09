@@ -116,7 +116,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       setState(() {
         _existingProducts = List<Map<String, dynamic>>.from(
           response['products'] ?? [],
-        );
+        ).where((p) => p['isActive'] == true).toList();
         _isLoadingProducts = false;
       });
     } catch (e) {
