@@ -740,14 +740,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('Excel парсинг: найдено ${products.length} товаров');
       print('Excel парсинг: найдено ${excelCategories.length} категорий');
 
-      // ✨ НОВОЕ: Применяем 5% наценку к ценам
+      // ✨ НОВОЕ: Применяем 15% наценку к ценам
       final productsWithMarkup = products.map((product) {
         final originalPrice = product['price'] as double;
-        final newPrice = (originalPrice * 1.00).roundToDouble(); // +5%
+        final newPrice = (originalPrice * 1.15).roundToDouble();
         return {...product, 'price': newPrice, 'originalPrice': originalPrice};
       }).toList();
 
-      print('💰 Применена наценка 5% к ${productsWithMarkup.length} товарам');
+      print('💰 Применена наценка 15% к ${productsWithMarkup.length} товарам');
 
       // ✨ Сохраняем категории из Excel
       _excelCategories = excelCategories;
