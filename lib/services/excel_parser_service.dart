@@ -349,6 +349,17 @@ class ExcelParserService {
     try {
       final row = table.rows[headerRow];
 
+      // 🔍 ДОБАВЬ ЭТИ СТРОКИ:
+      print('   🔍 ОТЛАДКА заголовков (строка $headerRow):');
+      for (int i = 0; i < row.length && i < 13; i++) {
+        final cell = row[i];
+        if (cell != null && cell.toString().trim().isNotEmpty) {
+          print('      Колонка[$i] = "${cell}"');
+        }
+      }
+      print('   🔍 Конец отладки\n');
+      // КОНЕЦ ДОБАВЛЕНИЯ
+
       for (int i = 0; i < row.length; i++) {
         final cell = row[i];
         if (cell == null) continue;
@@ -356,10 +367,19 @@ class ExcelParserService {
         final header = cell.toString().toLowerCase();
         if (header.isEmpty) continue;
 
+        // // Код товара
+        // if (header.contains('код') ||
+        //     header.contains('code') ||
+        //     header.contains('артикул')) {
+        //   columnMap['code'] = i;
+        // }
+
         // Код товара
-        if (header.contains('код') ||
-            header.contains('code') ||
-            header.contains('артикул')) {
+        if ((header.contains('код') ||
+                header.contains('code') ||
+                header.contains('артикул')) &&
+            !header.contains('штрих') &&
+            !header.contains('barcode')) {
           columnMap['code'] = i;
         }
         // Название

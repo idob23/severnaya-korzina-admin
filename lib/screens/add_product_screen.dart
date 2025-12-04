@@ -724,6 +724,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
     try {
       print('📊 Парсим Excel файл локально...');
 
+      // ✅ ДОБАВЬ ЭТИ СТРОКИ:
+      if (_categoryMappings.isEmpty) {
+        print('⏳ Маппинги ещё не загружены, загружаем...');
+        await _loadMappings();
+        print('✅ Маппинги загружены: ${_categoryMappings.length}');
+      } else {
+        print('✅ Маппинги уже загружены: ${_categoryMappings.length}');
+      }
+
       final result = await ExcelParserService.parseExcelFile(filePath);
 
       if (!result['success']) {
