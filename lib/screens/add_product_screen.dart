@@ -626,7 +626,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
         productsToAdd.add({
           'name': item['name'],
           'price': item['price'],
-          'unit': item['unit'],
+          'unit': (item['saleType'] == 'только уп')
+              ? item['unit'] // Для упаковок оставляем "уп (X шт)"
+              : (item['baseUnit'] ?? 'шт'), // Для штучных - "шт"
           'basePrice': item['basePrice'], // ✅ ДОБАВИТЬ
           'baseUnit': item['baseUnit'], // ✅ ДОБАВИТЬ
           'inPackage': item['inPackage'], // ✅ ДОБАВИТЬ
