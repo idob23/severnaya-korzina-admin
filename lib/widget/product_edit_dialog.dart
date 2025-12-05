@@ -26,6 +26,7 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
 
   int? _selectedCategoryId;
   bool _isApproved = false;
+  String _selectedSaleType = 'поштучно';
 
   @override
   void initState() {
@@ -43,6 +44,7 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
 
     _selectedCategoryId = widget.product['suggestedCategoryId'];
     _isApproved = widget.product['isApproved'] ?? false;
+    _selectedSaleType = widget.product['saleType'] ?? 'поштучно';
   }
 
   @override
@@ -156,6 +158,39 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                                     return 'Введите единицу';
                                   }
                                   return null;
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 16), // ← ДОБАВИТЬ ВЕСЬ ЭТОТ БЛОК
+
+// Тип продажи
+                        Row(
+                          children: [
+                            Icon(Icons.shopping_cart, color: Colors.grey),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: _selectedSaleType,
+                                decoration: InputDecoration(
+                                  labelText: 'Тип продажи',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: [
+                                  DropdownMenuItem(
+                                    value: 'поштучно',
+                                    child: Text('Поштучно'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'только уп',
+                                    child: Text('Только упаковками'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedSaleType = value ?? 'поштучно';
+                                  });
                                 },
                               ),
                             ),
@@ -372,6 +407,7 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
       'suggestedCategoryId': _selectedCategoryId,
       'suggestedCategory': selectedCategory['name'],
       'isApproved': _isApproved,
+      'saleType': _selectedSaleType,
     };
 
     widget.onSave(updatedProduct);

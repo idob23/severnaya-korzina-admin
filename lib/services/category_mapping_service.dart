@@ -11,7 +11,8 @@ class CategoryMappingService {
 
   /// Загрузить все маппинги из API
   /// Возвращает Map<String, int> где ключ - категория поставщика, значение - ID целевой категории
-  static Future<Map<String, int>> loadMappings({String? authToken}) async {
+  static Future<Map<String, Map<String, dynamic>>> loadMappings(
+      {String? authToken}) async {
     try {
       if (kDebugMode) {
         print('📥 Загрузка маппингов категорий...');
@@ -30,11 +31,16 @@ class CategoryMappingService {
         final data = json.decode(response.body);
         final mappings = data['mappings'] as List;
 
-        final result = <String, int>{};
+        final result = <String, Map<String, dynamic>>{};
         for (var mapping in mappings) {
           final supplierCat = mapping['supplierCategory'] as String;
           final targetId = mapping['targetCategoryId'] as int;
-          result[supplierCat] = targetId;
+          final saleType = mapping['saleType'] as String? ?? 'поштучно';
+
+          result[supplierCat] = {
+            'categoryId': targetId,
+            'saleType': saleType,
+          };
         }
 
         if (kDebugMode) {
@@ -54,53 +60,29 @@ class CategoryMappingService {
     }
   }
 
-  /// Найти ID целевой категории для товара
-  /// Сначала пытается найти точное совпадение, потом ищет по части пути
-  static int? findCategoryId(
+  static Map<String, dynamic>? findMapping(
     String? supplierCategory,
-    Map<String, int> mappings,
+    Map<String, Map<String, dynamic>> mappings,
   ) {
     if (supplierCategory == null || supplierCategory.isEmpty) {
       return null;
     }
-    print('🔍 Ищем маппинг для: "$supplierCategory"');
 
     // 1. Точное совпадение
     if (mappings.containsKey(supplierCategory)) {
       return mappings[supplierCategory];
     }
 
-    // 2. Поиск по началу строки (для подкатегорий)
-    // Например: если есть маппинг для "МОРОЖЕНОЕ ТМ СЕЛО ЗЕЛЕНОЕ"
-    // и товар из "МОРОЖЕНОЕ ТМ СЕЛО ЗЕЛЕНОЕ/Стаканчик"
+    // 2. Поиск по началу строки
     for (var entry in mappings.entries) {
       if (supplierCategory.startsWith(entry.key)) {
         if (kDebugMode) {
-          print(
-            '   🔍 Найден маппинг по префиксу: "${entry.key}" → ${entry.value}',
-          );
+          print('   🔍 Найден маппинг по префиксу: "${entry.key}"');
         }
         return entry.value;
       }
     }
 
-    // 3. Поиск по части пути (разбиваем по "/")
-    if (supplierCategory.contains('/')) {
-      final parts = supplierCategory.split('/');
-      for (var i = parts.length - 1; i >= 0; i--) {
-        final partialPath = parts.sublist(0, i + 1).join('/');
-        if (mappings.containsKey(partialPath)) {
-          if (kDebugMode) {
-            print(
-              '   🔍 Найден маппинг по частичному пути: "$partialPath" → ${mappings[partialPath]}',
-            );
-          }
-          return mappings[partialPath];
-        }
-      }
-    }
-
-    // Не найдено
     return null;
   }
 

@@ -29,7 +29,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Set<int> _selectedIndices = {}; // ✨ НОВОЕ: выбранные товары
   List<Map<String, dynamic>> _existingProducts = [];
   List<Map<String, dynamic>> _categories = [];
-  Map<String, int> _categoryMappings = {}; // ← ДОБАВЬ ЭТУ СТРОКУ
+  Map<String, Map<String, dynamic>> _categoryMappings = {};
   bool _useMappings = true; // ← И ЭТУ СТРОКУ
   int? _selectedCategoryFilter;
   String _searchQuery = '';
@@ -291,6 +291,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'unit': item['unit'],
         'description': item['description'] ?? '',
         'categoryId': item['suggestedCategoryId'],
+        'saleType': item['saleType'] ?? 'поштучно',
         'minQuantity': 1,
       });
 
@@ -937,7 +938,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<List<Map<String, dynamic>>> _enrichProductsWithCategories(
     List<Map<String, dynamic>> products, {
     bool useMappings = true, // ← ДОБАВЬ ЭТИ
-    Map<String, int>? mappings, // ← ТРИ СТРОКИ
+    Map<String, Map<String, dynamic>>? mappings, // ← ТРИ СТРОКИ
   }) async {
     print('\n🔗 Обогащение товаров категориями с маппингом...');
 
@@ -963,15 +964,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       // 1. Сначала пытаемся использовать маппинг
+      // 1. Сначала пытаемся использовать маппинг
+      String? saleType;
       if (useMappings && mappings != null && excelCategory != null) {
-        categoryId = CategoryMappingService.findCategoryId(
+        final mapping = CategoryMappingService.findMapping(
           excelCategory,
           mappings,
         );
 
-        if (categoryId != null) {
+        if (mapping != null) {
+          categoryId = mapping['categoryId'] as int?;
+          saleType = mapping['saleType'] as String?;
           mappedCount++;
-          print('   ✅ Маппинг: "$excelCategory" → категория #$categoryId');
+          print(
+              '   ✅ Маппинг: "$excelCategory" → категория #$categoryId, saleType=$saleType');
         }
       }
 
@@ -1015,8 +1021,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       enriched.add({
         ...product,
         'suggestedCategoryId': categoryId,
-        'suggestedCategoryName': categoryName, // ← ДОБАВЬ ЭТУ СТРОКУ
+        'suggestedCategoryName': categoryName,
         'originalCategory': excelCategory,
+        'saleType': saleType ?? 'поштучно', // ← ДОБАВИТЬ ЭТУ СТРОКУ
       });
     }
 
@@ -2070,6 +2077,7 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
   int? _selectedCategoryId;
   bool _isCreatingCategory = false;
   final _formKey = GlobalKey<FormState>();
+  String _selectedSaleType = 'поштучно';
   late List<Map<String, dynamic>> _localCategories;
 
   @override
@@ -2084,6 +2092,7 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
       text: widget.product['description'] ?? '',
     );
     _selectedCategoryId = widget.product['suggestedCategoryId'];
+    _selectedSaleType = widget.product['saleType'] ?? 'поштучно';
     _localCategories = List.from(widget.categories);
   }
 
@@ -2243,6 +2252,26 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                 ),
               ),
               SizedBox(height: 12),
+
+              // Тип продажи
+              DropdownButtonFormField<String>(
+                value: _selectedSaleType,
+                decoration: InputDecoration(
+                  labelText: 'Тип продажи',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  DropdownMenuItem(value: 'поштучно', child: Text('Поштучно')),
+                  DropdownMenuItem(
+                      value: 'только уп', child: Text('Только упаковками')),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedSaleType = value ?? 'поштучно';
+                  });
+                },
+              ),
+              SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -2311,6 +2340,7 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
               'unit': _unitController.text.trim(),
               'description': _descriptionController.text.trim(),
               'suggestedCategoryId': _selectedCategoryId,
+              'saleType': _selectedSaleType,
             };
             widget.onSave(updatedProduct);
             Navigator.pop(context);
