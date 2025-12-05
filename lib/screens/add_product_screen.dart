@@ -630,6 +630,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           'basePrice': item['basePrice'], // ✅ ДОБАВИТЬ
           'baseUnit': item['baseUnit'], // ✅ ДОБАВИТЬ
           'inPackage': item['inPackage'], // ✅ ДОБАВИТЬ
+          'saleType': item['saleType'] ?? 'поштучно',
           'description': item['description'] ?? '',
           'categoryId': categoryExists ? item['suggestedCategoryId'] : null,
           'minQuantity': 1,
