@@ -753,12 +753,59 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('Excel парсинг: найдено ${products.length} товаров');
       print('Excel парсинг: найдено ${excelCategories.length} категорий');
 
-      // ✨ НОВОЕ: Применяем 15% наценку к ценам
+// ✅ DEBUG: Логируем ПЕРЕД применением наценки
+      for (var product in products) {
+        if (product['name'].toString().contains('Колосок')) {
+          print('🔍 DEBUG Колосок ПЕРЕД наценкой:');
+          print('   name: ${product['name']}');
+          print('   price: ${product['price']}');
+          print('   unit: ${product['unit']}');
+          print('   basePrice: ${product['basePrice']}');
+          print('   baseUnit: ${product['baseUnit']}');
+          print('   inPackage: ${product['inPackage']}');
+          print('   packagePrice: ${product['packagePrice']}');
+        }
+      }
+
+      // // ✨ НОВОЕ: Применяем 15% наценку к ценам
+      // final productsWithMarkup = products.map((product) {
+      //   final originalPrice = product['price'] as double;
+      //   final newPrice = (originalPrice * 1.15).roundToDouble();
+      //   return {...product, 'price': newPrice, 'originalPrice': originalPrice};
+      // }).toList();
+
       final productsWithMarkup = products.map((product) {
-        final originalPrice = product['price'] as double;
-        final newPrice = (originalPrice * 1.15).roundToDouble();
-        return {...product, 'price': newPrice, 'originalPrice': originalPrice};
+        // ✅ Применяем наценку к basePrice (цена за единицу)
+        final basePrice = (product['basePrice'] ?? product['price']) as double;
+        final basePriceWithMarkup = (basePrice * 1.15).roundToDouble();
+
+        // ✅ Рассчитываем цену упаковки с наценкой
+        final inPackage = product['inPackage'] as int?;
+        final priceWithMarkup = (inPackage != null && inPackage > 1)
+            ? (basePriceWithMarkup * inPackage).roundToDouble()
+            : basePriceWithMarkup;
+
+        return {
+          ...product,
+          'price': priceWithMarkup, // Цена упаковки с наценкой
+          'basePrice': basePriceWithMarkup, // Цена за штуку с наценкой
+          'originalPrice': product['price'], // Оригинальная цена упаковки
+          'originalBasePrice': basePrice, // Оригинальная цена за штуку
+        };
       }).toList();
+
+      // ✅ DEBUG: Логируем ПОСЛЕ применения наценки
+      for (var product in productsWithMarkup) {
+        if (product['name'].toString().contains('Колосок')) {
+          print('🔍 DEBUG Колосок ПОСЛЕ наценки:');
+          print('   name: ${product['name']}');
+          print('   price: ${product['price']}');
+          print('   unit: ${product['unit']}');
+          print('   basePrice: ${product['basePrice']}');
+          print('   baseUnit: ${product['baseUnit']}');
+          print('   inPackage: ${product['inPackage']}');
+        }
+      }
 
       print('💰 Применена наценка 15% к ${productsWithMarkup.length} товарам');
 
