@@ -3,6 +3,8 @@
 
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 class ManageCategoriesScreen extends StatefulWidget {
   @override
@@ -11,6 +13,7 @@ class ManageCategoriesScreen extends StatefulWidget {
 
 class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
   final AdminApiService _apiService = AdminApiService();
+  final ImagePicker _imagePicker = ImagePicker();
 
   List<Map<String, dynamic>> _categories = [];
   bool _isLoading = true;
@@ -168,6 +171,79 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
     }
   }
 
+  Future<void> _uploadCategoryImage(Map<String, dynamic> category) async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+
+      if (image == null) return;
+
+      setState(() => _isLoading = true);
+
+      await _apiService.uploadCategoryImage(
+        category['id'],
+        File(image.path),
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ Картинка загружена')),
+      );
+
+      await _loadCategories();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Ошибка: $e')),
+      );
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _deleteCategoryImage(Map<String, dynamic> category) async {
+    // Показываем подтверждение
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить картинку?'),
+        content: Text(
+            'Вы уверены, что хотите удалить картинку категории "${category['name']}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      setState(() => _isLoading = true);
+
+      await _apiService.deleteCategoryImage(category['id']);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ Картинка удалена')),
+      );
+
+      await _loadCategories();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Ошибка: $e')),
+      );
+      setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _deleteAllEmptyCategories() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -282,16 +358,22 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                         return Card(
                           margin: EdgeInsets.only(bottom: 8),
                           child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: Colors.blue[100],
-                              child: Text(
-                                '${category['id']}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue[900],
-                                ),
-                              ),
-                            ),
+                            leading: category['imageUrl'] != null
+                                ? CircleAvatar(
+                                    backgroundImage: NetworkImage(
+                                      'https://api.sevkorzina.ru${category['imageUrl']}',
+                                    ),
+                                  )
+                                : CircleAvatar(
+                                    backgroundColor: Colors.blue[100],
+                                    child: Text(
+                                      '${category['id']}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue[900],
+                                      ),
+                                    ),
+                                  ),
                             title: Text(
                               category['name'] ?? '',
                               style: TextStyle(fontWeight: FontWeight.bold),
@@ -299,11 +381,40 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                             subtitle: category['description'] != null
                                 ? Text(category['description'])
                                 : null,
-                            trailing: IconButton(
-                              icon:
-                                  Icon(Icons.delete_outline, color: Colors.red),
-                              onPressed: () => _deleteCategory(category),
-                              tooltip: 'Удалить категорию',
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Кнопка загрузки/изменения картинки
+                                IconButton(
+                                  icon: Icon(
+                                    category['imageUrl'] != null
+                                        ? Icons.edit
+                                        : Icons.image,
+                                    color: Colors.blue,
+                                  ),
+                                  onPressed: () =>
+                                      _uploadCategoryImage(category),
+                                  tooltip: category['imageUrl'] != null
+                                      ? 'Изменить картинку'
+                                      : 'Загрузить картинку',
+                                ),
+                                // Кнопка удаления картинки (только если есть картинка)
+                                if (category['imageUrl'] != null)
+                                  IconButton(
+                                    icon: Icon(Icons.image_not_supported,
+                                        color: Colors.orange),
+                                    onPressed: () =>
+                                        _deleteCategoryImage(category),
+                                    tooltip: 'Удалить картинку',
+                                  ),
+                                // Кнопка удаления категории
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline,
+                                      color: Colors.red),
+                                  onPressed: () => _deleteCategory(category),
+                                  tooltip: 'Удалить категорию',
+                                ),
+                              ],
                             ),
                           ),
                         );

@@ -16,6 +16,8 @@ dependencies:
   
   # Управление состоянием
   provider: ^6.1.1
+
+  http_parser: ^4.0.2
   
   # Хранение данных
   shared_preferences: ^2.2.2

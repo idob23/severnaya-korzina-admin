@@ -643,6 +643,56 @@ class AdminApiService {
       throw Exception('Не удалось изменить настройку: $e');
     }
   }
+
+  /// Загрузить картинку для категории
+  Future<Map<String, dynamic>> uploadCategoryImage(
+    int categoryId,
+    File imageFile,
+  ) async {
+    try {
+      if (_authToken == null) {
+        final prefs = await SharedPreferences.getInstance();
+        _authToken = prefs.getString('admin_token');
+
+        if (_authToken == null) {
+          throw Exception('Токен не найден');
+        }
+      }
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/categories/$categoryId/image'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $_authToken';
+
+      // Добавляем файл
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'image',
+          imageFile.path,
+          contentType: MediaType('image', 'jpeg'),
+        ),
+      );
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Ошибка загрузки: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Ошибка загрузки картинки: $e');
+      throw Exception('Не удалось загрузить картинку: $e');
+    }
+  }
+
+  /// Удалить картинку категории
+  Future<Map<String, dynamic>> deleteCategoryImage(int categoryId) async {
+    return await _makeRequest('DELETE', '/categories/$categoryId/image');
+  }
 }
 
 /// Исключение для ошибок API

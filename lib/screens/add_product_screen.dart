@@ -1782,33 +1782,129 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                           ),
                                         ],
                                       ),
-                                      trailing: Row(
+                                      trailing: Column(
                                         mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
                                         children: [
-                                          IconButton(
-                                            icon: Icon(Icons.edit, size: 20),
-                                            onPressed: () => _editItem(index),
-                                            tooltip: 'Редактировать',
-                                          ),
-                                          IconButton(
-                                            icon: Icon(
-                                              Icons.delete_outline,
-                                              color: Colors.red[400],
-                                              size: 20,
+                                          // Чекбокс типа продажи (ещё компактнее)
+                                          InkWell(
+                                            onTap: () {
+                                              setState(() {
+                                                final currentSaleType =
+                                                    item['saleType'] ??
+                                                        'поштучно';
+                                                item['saleType'] =
+                                                    currentSaleType ==
+                                                            'поштучно'
+                                                        ? 'только уп'
+                                                        : 'поштучно';
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: EdgeInsets.symmetric(
+                                                  horizontal: 4, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: (item['saleType'] ??
+                                                            'поштучно') ==
+                                                        'поштучно'
+                                                    ? Colors.blue[50]
+                                                    : Colors.orange[50],
+                                                borderRadius:
+                                                    BorderRadius.circular(3),
+                                                border: Border.all(
+                                                  color: (item['saleType'] ??
+                                                              'поштучно') ==
+                                                          'поштучно'
+                                                      ? Colors.blue[300]!
+                                                      : Colors.orange[300]!,
+                                                  width: 1,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    (item['saleType'] ??
+                                                                'поштучно') ==
+                                                            'поштучно'
+                                                        ? Icons.check_box
+                                                        : Icons
+                                                            .check_box_outline_blank,
+                                                    size: 12,
+                                                    color: (item['saleType'] ??
+                                                                'поштучно') ==
+                                                            'поштучно'
+                                                        ? Colors.blue[700]
+                                                        : Colors.orange[700],
+                                                  ),
+                                                  SizedBox(width: 2),
+                                                  Text(
+                                                    (item['saleType'] ??
+                                                                'поштучно') ==
+                                                            'поштучно'
+                                                        ? 'Поштучно'
+                                                        : 'Только уп',
+                                                    style: TextStyle(
+                                                      fontSize: 9,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: (item['saleType'] ??
+                                                                  'поштучно') ==
+                                                              'поштучно'
+                                                          ? Colors.blue[700]
+                                                          : Colors.orange[700],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
-                                            onPressed: () =>
-                                                _removeFromParsedList(index),
-                                            tooltip: 'Убрать из списка',
                                           ),
-                                          IconButton(
-                                            icon: Icon(
-                                              Icons.add_circle,
-                                              color: Colors.green,
-                                              size: 20,
-                                            ),
-                                            onPressed: () =>
-                                                _addToDatabase(item),
-                                            tooltip: 'Добавить в базу',
+                                          // Кнопки действий (без отступа сверху)
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                padding: EdgeInsets.all(2),
+                                                constraints: BoxConstraints(
+                                                    minWidth: 28,
+                                                    minHeight: 28),
+                                                icon:
+                                                    Icon(Icons.edit, size: 16),
+                                                onPressed: () =>
+                                                    _editItem(index),
+                                                tooltip: 'Редактировать',
+                                              ),
+                                              IconButton(
+                                                padding: EdgeInsets.all(2),
+                                                constraints: BoxConstraints(
+                                                    minWidth: 28,
+                                                    minHeight: 28),
+                                                icon: Icon(
+                                                  Icons.delete_outline,
+                                                  color: Colors.red[400],
+                                                  size: 16,
+                                                ),
+                                                onPressed: () =>
+                                                    _removeFromParsedList(
+                                                        index),
+                                                tooltip: 'Убрать из списка',
+                                              ),
+                                              IconButton(
+                                                padding: EdgeInsets.all(2),
+                                                constraints: BoxConstraints(
+                                                    minWidth: 28,
+                                                    minHeight: 28),
+                                                icon: Icon(
+                                                  Icons.add_circle,
+                                                  color: Colors.green,
+                                                  size: 16,
+                                                ),
+                                                onPressed: () =>
+                                                    _addToDatabase(item),
+                                                tooltip: 'Добавить в базу',
+                                              ),
+                                            ],
                                           ),
                                         ],
                                       ),
