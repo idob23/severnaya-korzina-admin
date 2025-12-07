@@ -9,6 +9,7 @@ import '../services/admin_api_service.dart';
 import 'manage_categories_screen.dart';
 import '../services/category_mapper_service.dart';
 import '../services/category_mapping_service.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 class AddProductScreen extends StatefulWidget {
   @override
@@ -36,7 +37,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _excelCategories = [];
   final ScrollController _listScrollController = ScrollController();
+  final TextEditingController _parsedSearchController = TextEditingController();
   int? _highlightedIndex; // Индекс подсвеченного товара
+
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
 
   @override
   void initState() {
@@ -214,7 +220,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   void dispose() {
     _searchController.dispose();
-    _listScrollController.dispose();
+    _parsedSearchController.dispose();
     super.dispose();
   }
 
@@ -526,62 +532,36 @@ class _AddProductScreenState extends State<AddProductScreen> {
     });
   }
 
-  // ✅ ДОБАВИТЬ: Поиск товара и прокрутка к нему
   void _searchAndScrollToProduct(String query) {
     if (query.trim().isEmpty) {
-      setState(() {
-        _searchQuery = '';
-        _highlightedIndex = null;
-      });
+      setState(() => _highlightedIndex = null);
       return;
     }
 
-    setState(() {
-      _searchQuery = query.toLowerCase();
-    });
-
-    // Находим первый подходящий товар
-    final foundIndex = _parsedItems.indexWhere((item) {
-      final name = (item['name'] ?? '').toString().toLowerCase();
-      return name.contains(_searchQuery);
-    });
+    final foundIndex = _parsedItems.indexWhere((item) => (item['name'] ?? '')
+        .toString()
+        .toLowerCase()
+        .contains(query.toLowerCase()));
 
     if (foundIndex != -1) {
-      setState(() {
-        _highlightedIndex = foundIndex;
-      });
+      setState(() => _highlightedIndex = foundIndex);
 
-      // Прокручиваем к найденному товару
-      // Высота одной карточки ~100px, прокручиваем чуть выше для видимости
-      final scrollPosition = foundIndex * 100.0 - 50.0;
+      // ✅ ТОЧНАЯ ПРОКРУТКА К ЭЛЕМЕНТУ
+      _itemScrollController.scrollTo(
+        index: foundIndex,
+        duration: Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+        alignment: 0.1, // 10% от верха экрана
+      );
 
-      // Ждём пока список отрисуется, затем прокручиваем
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_listScrollController.hasClients) {
-          _listScrollController.animateTo(
-            scrollPosition.clamp(
-                0.0, _listScrollController.position.maxScrollExtent),
-            duration: Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-          );
-        }
-      });
-
-      // Убираем подсветку через 2 секунды
-      Future.delayed(Duration(seconds: 2), () {
-        if (mounted) {
-          setState(() {
-            _highlightedIndex = null;
-          });
-        }
+      Future.delayed(Duration(seconds: 3), () {
+        if (mounted) setState(() => _highlightedIndex = null);
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Товар "$query" не найден'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
+            content: Text('Товар "$query" не найден'),
+            backgroundColor: Colors.orange),
       );
     }
   }
@@ -842,23 +822,45 @@ class _AddProductScreenState extends State<AddProductScreen> {
       //   return {...product, 'price': newPrice, 'originalPrice': originalPrice};
       // }).toList();
 
+      // final productsWithMarkup = products.map((product) {
+      //   // ✅ Применяем наценку к basePrice (цена за единицу)
+      //   final basePrice = (product['basePrice'] ?? product['price']) as double;
+      //   final basePriceWithMarkup = (basePrice * 1.15).roundToDouble();
+
+      //   // ✅ Рассчитываем цену упаковки с наценкой
+      //   final inPackage = product['inPackage'] as int?;
+      //   final priceWithMarkup = (inPackage != null && inPackage > 1)
+      //       ? (basePriceWithMarkup * inPackage).roundToDouble()
+      //       : basePriceWithMarkup;
+
+      //   return {
+      //     ...product,
+      //     'price': priceWithMarkup, // Цена упаковки с наценкой
+      //     'basePrice': basePriceWithMarkup, // Цена за штуку с наценкой
+      //     'originalPrice': product['price'], // Оригинальная цена упаковки
+      //     'originalBasePrice': basePrice, // Оригинальная цена за штуку
+      //   };
+      // }).toList();
+
       final productsWithMarkup = products.map((product) {
-        // ✅ Применяем наценку к basePrice (цена за единицу)
+        // ✅ Если есть цена упаковки - используем её, иначе price
+        final packagePriceFromExcel = product['packagePrice'] as double?;
+        final priceToMarkup =
+            (packagePriceFromExcel ?? product['price']) as double;
+
+        // Применяем наценку к цене упаковки
+        final priceWithMarkup = (priceToMarkup * 1.15).roundToDouble();
+
+        // Цена за штуку с наценкой
         final basePrice = (product['basePrice'] ?? product['price']) as double;
         final basePriceWithMarkup = (basePrice * 1.15).roundToDouble();
 
-        // ✅ Рассчитываем цену упаковки с наценкой
-        final inPackage = product['inPackage'] as int?;
-        final priceWithMarkup = (inPackage != null && inPackage > 1)
-            ? (basePriceWithMarkup * inPackage).roundToDouble()
-            : basePriceWithMarkup;
-
         return {
           ...product,
-          'price': priceWithMarkup, // Цена упаковки с наценкой
-          'basePrice': basePriceWithMarkup, // Цена за штуку с наценкой
-          'originalPrice': product['price'], // Оригинальная цена упаковки
-          'originalBasePrice': basePrice, // Оригинальная цена за штуку
+          'price': priceWithMarkup, // 1872 * 1.15 = 2153
+          'basePrice': basePriceWithMarkup, // 58.5 * 1.15 = 67
+          'originalPrice': priceToMarkup,
+          'originalBasePrice': basePrice,
         };
       }).toList();
 
@@ -1791,15 +1793,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     Padding(
                       padding: EdgeInsets.all(8.0),
                       child: TextField(
-                        controller: _searchController,
+                        controller: _parsedSearchController,
                         decoration: InputDecoration(
                           hintText: 'Поиск товара по названию...',
                           prefixIcon: Icon(Icons.search),
-                          suffixIcon: _searchController.text.isNotEmpty
+                          suffixIcon: _parsedSearchController.text.isNotEmpty
                               ? IconButton(
                                   icon: Icon(Icons.clear),
                                   onPressed: () {
-                                    _searchController.clear();
+                                    _parsedSearchController.clear();
                                     _searchAndScrollToProduct('');
                                   },
                                 )
@@ -1834,8 +1836,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                   style: TextStyle(color: Colors.grey),
                                 ),
                               )
-                            : ListView.builder(
-                                controller: _listScrollController,
+                            : ScrollablePositionedList.builder(
+                                itemScrollController: _itemScrollController,
+                                itemPositionsListener: _itemPositionsListener,
                                 itemCount: _parsedItems.length,
                                 itemBuilder: (context, index) {
                                   final item = _parsedItems[index];
