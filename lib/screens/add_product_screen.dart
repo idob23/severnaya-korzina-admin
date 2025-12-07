@@ -288,11 +288,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
       await _apiService.createProduct({
         'name': item['name'],
         'price': item['price'],
-        'unit': item['unit'],
+        'unit': (item['saleType'] == 'только уп')
+            ? item['unit'] // Для упаковок - оставляем как есть
+            : (item['baseUnit'] ?? 'шт'), // Для штучных - берём baseUnit
         'description': item['description'] ?? '',
         'categoryId': item['suggestedCategoryId'],
         'saleType': item['saleType'] ?? 'поштучно',
         'minQuantity': 1,
+        'basePrice': item['basePrice'], // ✅ ДОБАВИТЬ
+        'baseUnit': item['baseUnit'], // ✅ ДОБАВИТЬ
+        'inPackage': item['inPackage'], // ✅ ДОБАВИТЬ
       });
 
       // Обновляем список товаров
@@ -2487,6 +2492,12 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
               'description': _descriptionController.text.trim(),
               'suggestedCategoryId': _selectedCategoryId,
               'saleType': _selectedSaleType,
+              // ✅ ОБНОВЛЯЕМ basePrice и baseUnit при изменении price и unit
+              'basePrice': double.tryParse(_priceController.text) ?? 0,
+              'baseUnit': _unitController.text.trim(),
+              'inPackage': _selectedSaleType == 'только уп'
+                  ? widget.product['inPackage'] // Для упаковок - оставляем
+                  : 1, // Для штучных - всегда 1
             };
             widget.onSave(updatedProduct);
             Navigator.pop(context);
