@@ -35,6 +35,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _excelCategories = [];
+  final ScrollController _listScrollController = ScrollController();
+  int? _highlightedIndex; // Индекс подсвеченного товара
 
   @override
   void initState() {
@@ -212,6 +214,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _listScrollController.dispose();
     super.dispose();
   }
 
@@ -521,6 +524,66 @@ class _AddProductScreenState extends State<AddProductScreen> {
         );
       }
     });
+  }
+
+  // ✅ ДОБАВИТЬ: Поиск товара и прокрутка к нему
+  void _searchAndScrollToProduct(String query) {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchQuery = '';
+        _highlightedIndex = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _searchQuery = query.toLowerCase();
+    });
+
+    // Находим первый подходящий товар
+    final foundIndex = _parsedItems.indexWhere((item) {
+      final name = (item['name'] ?? '').toString().toLowerCase();
+      return name.contains(_searchQuery);
+    });
+
+    if (foundIndex != -1) {
+      setState(() {
+        _highlightedIndex = foundIndex;
+      });
+
+      // Прокручиваем к найденному товару
+      // Высота одной карточки ~100px, прокручиваем чуть выше для видимости
+      final scrollPosition = foundIndex * 100.0 - 50.0;
+
+      // Ждём пока список отрисуется, затем прокручиваем
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_listScrollController.hasClients) {
+          _listScrollController.animateTo(
+            scrollPosition.clamp(
+                0.0, _listScrollController.position.maxScrollExtent),
+            duration: Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+
+      // Убираем подсветку через 2 секунды
+      Future.delayed(Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _highlightedIndex = null;
+          });
+        }
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Товар "$query" не найден'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   // ✨ НОВОЕ: Добавление только выбранных товаров
@@ -1723,6 +1786,43 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       ),
                     ),
 
+                  // ✅ ДОБАВИТЬ: Поле поиска
+                  if (_parsedItems.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Поиск товара по названию...',
+                          prefixIcon: Icon(Icons.search),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _searchAndScrollToProduct('');
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                        onSubmitted: _searchAndScrollToProduct,
+                        onChanged: (value) {
+                          setState(() {}); // Для обновления кнопки очистки
+                          // Поиск в реальном времени при наборе
+                          if (value.length >= 3) {
+                            _searchAndScrollToProduct(value);
+                          } else if (value.isEmpty) {
+                            _searchAndScrollToProduct('');
+                          }
+                        },
+                      ),
+                    ),
+
                   // Список загруженных товаров
                   Expanded(
                     child: _isLoading
@@ -1735,17 +1835,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 ),
                               )
                             : ListView.builder(
+                                controller: _listScrollController,
                                 itemCount: _parsedItems.length,
                                 itemBuilder: (context, index) {
                                   final item = _parsedItems[index];
+
+                                  // ✅ ДОБАВИТЬ: Определяем подсветку
+                                  final isHighlighted =
+                                      _highlightedIndex == index;
+
                                   return Card(
                                     margin: EdgeInsets.symmetric(
                                       horizontal: 8,
                                       vertical: 4,
                                     ),
-                                    color: _selectedIndices.contains(index)
-                                        ? Colors.blue[50]
-                                        : null,
+                                    color: isHighlighted
+                                        ? Colors.amber[
+                                            100] // ✅ Жёлтая подсветка для найденного
+                                        : _selectedIndices.contains(index)
+                                            ? Colors.blue[
+                                                50] // Голубая для выбранного
+                                            : null, // Белая для обычного
                                     child: ListTile(
                                       leading: Checkbox(
                                         // ← ДОБАВЬ весь этот блок
