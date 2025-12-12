@@ -5,11 +5,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:severnaya_korzina_admin/services/excel_parser_service.dart';
 import 'dart:io';
 import 'dart:math';
+import 'dart:async';
 import '../services/admin_api_service.dart';
 import 'manage_categories_screen.dart';
 import '../services/category_mapper_service.dart';
 import '../services/category_mapping_service.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:flutter/foundation.dart';
 
 class AddProductScreen extends StatefulWidget {
   @override
@@ -23,6 +25,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _isLoading = false;
   bool _isLoadingProducts = true;
   String? _error;
+  Timer? _searchDebounce;
 
   // Данные
   PlatformFile? _selectedFile;
@@ -54,20 +57,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
   // ← ДОБАВЬ ВЕСЬ ЭТОТ МЕТОД:
   Future<void> _loadMappings() async {
     try {
-      print('📥 Загрузка маппингов категорий...');
-      print('🌐 URL: ${CategoryMappingService.baseUrl}'); // ← ДОБАВЬ ЭТУ СТРОКУ
+      if (kDebugMode) print('📥 Загрузка маппингов категорий...');
+      if (kDebugMode)
+        print(
+            '🌐 URL: ${CategoryMappingService.baseUrl}'); // ← ДОБАВЬ ЭТУ СТРОКУ
       final mappings = await CategoryMappingService.loadMappings();
 
       setState(() {
         _categoryMappings = mappings;
       });
 
-      print('✅ Загружено ${mappings.length} маппингов');
-      print(
-          '📋 Первые 3 маппинга: ${mappings.entries.take(3).toList()}'); // ← И ЭТУ
+      if (kDebugMode) print('✅ Загружено ${mappings.length} маппингов');
+      if (kDebugMode)
+        print(
+            '📋 Первые 3 маппинга: ${mappings.entries.take(3).toList()}'); // ← И ЭТУ
     } catch (e) {
-      print('⚠️ Ошибка загрузки маппингов: $e');
-      print('⚠️ Stack trace: ${StackTrace.current}'); // ← И ЭТУ
+      if (kDebugMode) print('⚠️ Ошибка загрузки маппингов: $e');
+      if (kDebugMode) print('⚠️ Stack trace: ${StackTrace.current}'); // ← И ЭТУ
     }
   }
 
@@ -94,9 +100,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
           response['categories'] ?? [],
         );
       });
-      print('Категории загружены: ${_categories.length}');
+      if (kDebugMode) print('Категории загружены: ${_categories.length}');
     } catch (e) {
-      print('Ошибка загрузки категорий: $e');
+      if (kDebugMode) print('Ошибка загрузки категорий: $e');
       // Используем дефолтные если не удалось загрузить
       setState(() {
         _categories = [
@@ -119,7 +125,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
     try {
       // Используем существующий метод getProducts
       final response = await _apiService.getProducts();
-      print('Товары загружены: ${response['products']?.length ?? 0}');
+      if (kDebugMode)
+        print('Товары загружены: ${response['products']?.length ?? 0}');
 
       setState(() {
         _existingProducts = List<Map<String, dynamic>>.from(
@@ -128,7 +135,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         _isLoadingProducts = false;
       });
     } catch (e) {
-      print('Ошибка загрузки товаров: $e');
+      if (kDebugMode) print('Ошибка загрузки товаров: $e');
       setState(() {
         _isLoadingProducts = false;
       });
@@ -137,7 +144,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   Future<void> _pickAndProcessFile() async {
     try {
-      print('Выбираем файл...');
+      if (kDebugMode) print('Выбираем файл...');
 
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -153,8 +160,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
           _selectedIndices.clear();
         });
 
-        print('Файл выбран: ${_selectedFile!.name}');
-        print('Путь к файлу: ${_selectedFile!.path}');
+        if (kDebugMode) print('Файл выбран: ${_selectedFile!.name}');
+        if (kDebugMode) print('Путь к файлу: ${_selectedFile!.path}');
 
         final extension = _selectedFile!.extension?.toLowerCase();
         if (extension == 'xlsx' || extension == 'xls') {
@@ -166,7 +173,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             final response = await _apiService.parseProductFile(
               _selectedFile!.path!,
             );
-            print('Ответ сервера: $response');
+            if (kDebugMode) print('Ответ сервера: $response');
 
             setState(() {
               _parsedItems = List<Map<String, dynamic>>.from(
@@ -175,9 +182,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
               _isLoading = false;
             });
 
-            print('Распарсено товаров: ${_parsedItems.length}');
+            if (kDebugMode) print('Распарсено товаров: ${_parsedItems.length}');
           } catch (e) {
-            print('Ошибка при отправке на сервер: $e');
+            if (kDebugMode) print('Ошибка при отправке на сервер: $e');
             setState(() {
               _error = 'Ошибка обработки файла';
               _isLoading = false;
@@ -186,7 +193,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         }
       }
     } catch (e) {
-      print('Общая ошибка выбора файла: $e');
+      if (kDebugMode) print('Общая ошибка выбора файла: $e');
       setState(() {
         _error = 'Ошибка выбора файла: $e';
         _isLoading = false;
@@ -219,6 +226,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _parsedSearchController.dispose();
     super.dispose();
@@ -323,7 +331,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         );
       }
     } catch (e) {
-      print('Ошибка добавления товара: $e');
+      if (kDebugMode) print('Ошибка добавления товара: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -371,7 +379,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
               // ✅ ДОБАВЛЕНО: Сначала создаём недостающие категории
               if (_excelCategories.isNotEmpty) {
-                print('\n🏷️ Создание категорий перед добавлением товаров...');
+                if (kDebugMode)
+                  print(
+                      '\n🏷️ Создание категорий перед добавлением товаров...');
                 categoriesCreated = await _autoCreateCategoriesFromExcel(
                   _excelCategories,
                 );
@@ -389,7 +399,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   _parsedItems = reEnrichedProducts;
                 });
 
-                print('✅ Категории созданы, товары обновлены');
+                if (kDebugMode) print('✅ Категории созданы, товары обновлены');
               }
 
               // Теперь добавляем товары
@@ -411,7 +421,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   });
                   successCount++;
                 } catch (e) {
-                  print('Ошибка добавления товара ${item['name']}: $e');
+                  if (kDebugMode)
+                    print('Ошибка добавления товара ${item['name']}: $e');
                   errorCount++;
                 }
               }
@@ -600,30 +611,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     if (confirmed != true) return;
 
-    // // ✨ Создаём категории ПЕРЕД добавлением товаров (как было)
-    // int categoriesCreated = 0;
-    // if (_excelCategories.isNotEmpty) {
-    //   print('🏷️ Создаём категории из Excel...');
-    //   categoriesCreated = await _autoCreateCategoriesFromExcel(
-    //     _excelCategories,
-    //   );
-    //   if (categoriesCreated > 0) {
-    //     await _loadCategories();
-    //     final reEnriched = await _enrichProductsWithCategories(
-    //       _parsedItems,
-    //       useMappings: _useMappings,
-    //       mappings: _categoryMappings,
-    //     );
-    //     setState(() {
-    //       _parsedItems = reEnriched;
-    //     });
-    //   }
-    // }
-
     // ✅ ОТКЛЮЧЕНО: Автосоздание категорий из Excel
 // Теперь используем ТОЛЬКО существующие категории из маппинга
     int categoriesCreated = 0;
-    print('📋 Проверка категорий из маппинга...');
+    if (kDebugMode) print('📋 Проверка категорий из маппинга...');
 
 // Проверяем что все нужные категории из маппинга уже существуют в БД
     final Set<int> requiredCategoryIds = {};
@@ -639,8 +630,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
         .toList();
 
     if (missingCategories.isNotEmpty) {
-      print('⚠️ ВНИМАНИЕ: Отсутствуют категории с ID: $missingCategories');
-      print('💡 Добавьте эти категории вручную или обновите маппинг');
+      if (kDebugMode)
+        print('⚠️ ВНИМАНИЕ: Отсутствуют категории с ID: $missingCategories');
+      if (kDebugMode)
+        print('💡 Добавьте эти категории вручную или обновите маппинг');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -654,7 +647,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         );
       }
     } else {
-      print('✅ Все категории из маппинга присутствуют в БД');
+      if (kDebugMode) print('✅ Все категории из маппинга присутствуют в БД');
     }
 
     // ✨ Показываем диалог прогресса
@@ -701,12 +694,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
         );
 
 // ✅ ОТЛАДКА
-        print('=== ITEM DEBUG ===');
-        print('name: ${item['name']}');
-        print('basePrice: ${item['basePrice']}');
-        print('baseUnit: ${item['baseUnit']}');
-        print('inPackage: ${item['inPackage']}');
-        print('==================');
+        if (kDebugMode) print('=== ITEM DEBUG ===');
+        if (kDebugMode) print('name: ${item['name']}');
+        if (kDebugMode) print('basePrice: ${item['basePrice']}');
+        if (kDebugMode) print('baseUnit: ${item['baseUnit']}');
+        if (kDebugMode) print('inPackage: ${item['inPackage']}');
+        if (kDebugMode) print('==================');
 
         productsToAdd.add({
           'name': item['name'],
@@ -726,7 +719,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       // ✨ МАССОВОЕ ДОБАВЛЕНИЕ ОДНИМ ЗАПРОСОМ!
-      print('🚀 Массовое добавление ${productsToAdd.length} товаров...');
+      if (kDebugMode)
+        print('🚀 Массовое добавление ${productsToAdd.length} товаров...');
       final result = await _apiService.bulkCreateProducts(productsToAdd);
 
       Navigator.pop(context); // Закрываем диалог прогресса
@@ -794,7 +788,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
     } catch (e) {
       Navigator.pop(context); // Закрываем диалог прогресса
-      print('❌ Ошибка массового добавления: $e');
+      if (kDebugMode) print('❌ Ошибка массового добавления: $e');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -811,15 +805,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
   /// ✨ НОВЫЙ МЕТОД: Парсинг Excel файла локально
   Future<void> _parseExcelFile(String filePath) async {
     try {
-      print('📊 Парсим Excel файл локально...');
+      if (kDebugMode) print('📊 Парсим Excel файл локально...');
 
       // ✅ ДОБАВЬ ЭТИ СТРОКИ:
       if (_categoryMappings.isEmpty) {
-        print('⏳ Маппинги ещё не загружены, загружаем...');
+        if (kDebugMode) print('⏳ Маппинги ещё не загружены, загружаем...');
         await _loadMappings();
-        print('✅ Маппинги загружены: ${_categoryMappings.length}');
+        if (kDebugMode)
+          print('✅ Маппинги загружены: ${_categoryMappings.length}');
       } else {
-        print('✅ Маппинги уже загружены: ${_categoryMappings.length}');
+        if (kDebugMode)
+          print('✅ Маппинги уже загружены: ${_categoryMappings.length}');
       }
 
       final result = await ExcelParserService.parseExcelFile(filePath);
@@ -835,49 +831,24 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // Сохраняем категории из Excel для создания при добавлении товаров
       _excelCategories = excelCategories;
 
-      print('Excel парсинг: найдено ${products.length} товаров');
-      print('Excel парсинг: найдено ${excelCategories.length} категорий');
+      if (kDebugMode)
+        print('Excel парсинг: найдено ${products.length} товаров');
+      if (kDebugMode)
+        print('Excel парсинг: найдено ${excelCategories.length} категорий');
 
 // ✅ DEBUG: Логируем ПЕРЕД применением наценки
       for (var product in products) {
         if (product['name'].toString().contains('Колосок')) {
-          print('🔍 DEBUG Колосок ПЕРЕД наценкой:');
-          print('   name: ${product['name']}');
-          print('   price: ${product['price']}');
-          print('   unit: ${product['unit']}');
-          print('   basePrice: ${product['basePrice']}');
-          print('   baseUnit: ${product['baseUnit']}');
-          print('   inPackage: ${product['inPackage']}');
-          print('   packagePrice: ${product['packagePrice']}');
+          if (kDebugMode) print('🔍 DEBUG Колосок ПЕРЕД наценкой:');
+          if (kDebugMode) print('   name: ${product['name']}');
+          if (kDebugMode) print('   price: ${product['price']}');
+          if (kDebugMode) print('   unit: ${product['unit']}');
+          if (kDebugMode) print('   basePrice: ${product['basePrice']}');
+          if (kDebugMode) print('   baseUnit: ${product['baseUnit']}');
+          if (kDebugMode) print('   inPackage: ${product['inPackage']}');
+          if (kDebugMode) print('   packagePrice: ${product['packagePrice']}');
         }
       }
-
-      // // ✨ НОВОЕ: Применяем 15% наценку к ценам
-      // final productsWithMarkup = products.map((product) {
-      //   final originalPrice = product['price'] as double;
-      //   final newPrice = (originalPrice * 1.15).roundToDouble();
-      //   return {...product, 'price': newPrice, 'originalPrice': originalPrice};
-      // }).toList();
-
-      // final productsWithMarkup = products.map((product) {
-      //   // ✅ Применяем наценку к basePrice (цена за единицу)
-      //   final basePrice = (product['basePrice'] ?? product['price']) as double;
-      //   final basePriceWithMarkup = (basePrice * 1.15).roundToDouble();
-
-      //   // ✅ Рассчитываем цену упаковки с наценкой
-      //   final inPackage = product['inPackage'] as int?;
-      //   final priceWithMarkup = (inPackage != null && inPackage > 1)
-      //       ? (basePriceWithMarkup * inPackage).roundToDouble()
-      //       : basePriceWithMarkup;
-
-      //   return {
-      //     ...product,
-      //     'price': priceWithMarkup, // Цена упаковки с наценкой
-      //     'basePrice': basePriceWithMarkup, // Цена за штуку с наценкой
-      //     'originalPrice': product['price'], // Оригинальная цена упаковки
-      //     'originalBasePrice': basePrice, // Оригинальная цена за штуку
-      //   };
-      // }).toList();
 
       final productsWithMarkup = products.map((product) {
         // ✅ Если есть цена упаковки - используем её, иначе price
@@ -904,28 +875,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // ✅ DEBUG: Логируем ПОСЛЕ применения наценки
       for (var product in productsWithMarkup) {
         if (product['name'].toString().contains('Колосок')) {
-          print('🔍 DEBUG Колосок ПОСЛЕ наценки:');
-          print('   name: ${product['name']}');
-          print('   price: ${product['price']}');
-          print('   unit: ${product['unit']}');
-          print('   basePrice: ${product['basePrice']}');
-          print('   baseUnit: ${product['baseUnit']}');
-          print('   inPackage: ${product['inPackage']}');
+          if (kDebugMode) print('🔍 DEBUG Колосок ПОСЛЕ наценки:');
+          if (kDebugMode) print('   name: ${product['name']}');
+          if (kDebugMode) print('   price: ${product['price']}');
+          if (kDebugMode) print('   unit: ${product['unit']}');
+          if (kDebugMode) print('   basePrice: ${product['basePrice']}');
+          if (kDebugMode) print('   baseUnit: ${product['baseUnit']}');
+          if (kDebugMode) print('   inPackage: ${product['inPackage']}');
         }
       }
 
-      print('💰 Применена наценка 15% к ${productsWithMarkup.length} товарам');
+      if (kDebugMode)
+        print(
+            '💰 Применена наценка 15% к ${productsWithMarkup.length} товарам');
 
       // ✨ Сохраняем категории из Excel
       _excelCategories = excelCategories;
 
       // ✨ СОЗДАЁМ категории из Excel в БД ПЕРЕД обогащением товаров
-      print('🏷️ Создаём категории из Excel в БД...');
+      if (kDebugMode) print('🏷️ Создаём категории из Excel в БД...');
       final createdCount = await _autoCreateCategoriesFromExcel(
         excelCategories,
       );
       if (createdCount > 0) {
-        print('✅ Создано новых категорий: $createdCount');
+        if (kDebugMode) print('✅ Создано новых категорий: $createdCount');
         // Перезагружаем категории из БД
         await _loadCategories();
       }
@@ -938,18 +911,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
       );
 
 // ✨ ДИАГНОСТИКА: Проверяем уникальность
-      print('\n📊 ДИАГНОСТИКА ТОВАРОВ:');
-      print('   После парсинга: ${productsWithMarkup.length}');
-      print('   После обогащения: ${enrichedProducts.length}');
+      if (kDebugMode) print('\n📊 ДИАГНОСТИКА ТОВАРОВ:');
+      if (kDebugMode) print('   После парсинга: ${productsWithMarkup.length}');
+      if (kDebugMode) print('   После обогащения: ${enrichedProducts.length}');
 
       final uniqueNamesBefore =
           productsWithMarkup.map((p) => p['name']).toSet();
       final uniqueNamesAfter = enrichedProducts.map((p) => p['name']).toSet();
 
-      print('   Уникальных названий ДО: ${uniqueNamesBefore.length}');
-      print('   Уникальных названий ПОСЛЕ: ${uniqueNamesAfter.length}');
-      print(
-          '   Дубликатов в прайсе: ${productsWithMarkup.length - uniqueNamesBefore.length}');
+      if (kDebugMode)
+        print('   Уникальных названий ДО: ${uniqueNamesBefore.length}');
+      if (kDebugMode)
+        print('   Уникальных названий ПОСЛЕ: ${uniqueNamesAfter.length}');
+      if (kDebugMode)
+        print(
+            '   Дубликатов в прайсе: ${productsWithMarkup.length - uniqueNamesBefore.length}');
 
 // ✨ Показываем примеры дубликатов если есть
       if (productsWithMarkup.length != uniqueNamesBefore.length) {
@@ -962,9 +938,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
         final duplicates =
             nameCounts.entries.where((e) => e.value > 1).take(5).toList();
 
-        print('\n   📋 Примеры дубликатов:');
+        if (kDebugMode) print('\n   📋 Примеры дубликатов:');
         for (var dup in duplicates) {
-          print('      "${dup.key}" - встречается ${dup.value} раз');
+          if (kDebugMode)
+            print('      "${dup.key}" - встречается ${dup.value} раз');
         }
       }
 
@@ -991,7 +968,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         );
       }
     } catch (e) {
-      print('Ошибка парсинга Excel: $e');
+      if (kDebugMode) print('Ошибка парсинга Excel: $e');
       setState(() {
         _error = 'Ошибка парсинга Excel: $e';
         _isLoading = false;
@@ -1027,74 +1004,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
     return uniqueCategories;
   }
 
-  // /// ✨ НОВЫЙ: Автосоздание категорий из Excel
-  // Future<int> _autoCreateCategoriesFromExcel(
-  //     List<Map<String, dynamic>> excelCategories) async {
-  //   print('\n🏷️ Автосоздание категорий с умным маппингом...');
-
-  //   // ✨ Собираем оригинальные → упрощённые
-  //   final Map<String, String> categoryMapping = {};
-
-  //   for (var cat in excelCategories) {
-  //     if (cat['level'] == 1) {
-  //       final originalName = cat['name'] as String;
-
-  //       // ✨ Маппим в упрощённую категорию
-  //       final simplifiedName =
-  //           CategoryMapperService.mapToSimplifiedCategory(originalName);
-
-  //       if (simplifiedName != null) {
-  //         categoryMapping[simplifiedName] = originalName;
-  //         print('   📌 "$originalName" → "$simplifiedName"');
-  //       } else {
-  //         // Если не смаппилось - оставляем как есть
-  //         categoryMapping[originalName] = originalName;
-  //         print('   ⚠️ "$originalName" → (без изменений)');
-  //       }
-  //     }
-  //   }
-
-  //   // ✨ Получаем уникальные упрощённые названия
-  //   final uniqueSimplified = categoryMapping.keys.toSet();
-  //   print(
-  //       '   📊 Всего категорий в прайсе: ${excelCategories.where((c) => c['level'] == 1).length}');
-  //   print('   ✅ Уникальных упрощённых: ${uniqueSimplified.length}');
-
-  //   int created = 0;
-  //   int skipped = 0;
-
-  //   // ✨ Создаём упрощённые категории
-  //   for (var simplifiedName in uniqueSimplified) {
-  //     try {
-  //       final exists = _categories.any((c) =>
-  //           c['name'].toString().toLowerCase() == simplifiedName.toLowerCase());
-
-  //       if (exists) {
-  //         skipped++;
-  //         print('   ⏭️ Пропущена: "$simplifiedName"');
-  //         continue;
-  //       }
-
-  //       await _apiService.createCategory(
-  //         simplifiedName,
-  //         description: 'Автоматически из прайса',
-  //       );
-
-  //       created++;
-  //       print('   ✅ Создана: "$simplifiedName"');
-  //     } catch (e) {
-  //       print('   ⚠️ Ошибка создания "$simplifiedName": $e');
-  //     }
-  //   }
-
-  //   print('📊 ИТОГО: Создано: $created, Пропущено: $skipped');
-  //   return created;
-  // }
-
   /// ✨ Автосоздание ТОЛЬКО целевых категорий из маппинга
   Future<int> _autoCreateCategoriesFromExcel(
       List<Map<String, dynamic>> excelCategories) async {
-    print('\n🏷️ Автосоздание целевых категорий из маппинга...');
+    if (kDebugMode)
+      print('\n🏷️ Автосоздание целевых категорий из маппинга...');
 
     // ✅ Собираем ТОЛЬКО уникальные целевые категории из маппинга
     final Set<int> targetCategoryIds = {};
@@ -1106,8 +1020,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
     }
 
-    print(
-        '   📊 Найдено ${targetCategoryIds.length} уникальных целевых категорий в маппинге');
+    if (kDebugMode)
+      print(
+          '   📊 Найдено ${targetCategoryIds.length} уникальных целевых категорий в маппинге');
 
     int created = 0;
     int skipped = 0;
@@ -1121,20 +1036,25 @@ class _AddProductScreenState extends State<AddProductScreen> {
           skipped++;
           final existingCat =
               _categories.firstWhere((c) => c['id'] == categoryId);
-          print('   ⏭️ Уже есть: ID $categoryId - "${existingCat['name']}"');
+          if (kDebugMode)
+            print('   ⏭️ Уже есть: ID $categoryId - "${existingCat['name']}"');
         } else {
           // Категория из маппинга отсутствует в БД - это ошибка!
-          print(
-              '   ⚠️ ПРОБЛЕМА: Категория ID $categoryId из маппинга НЕ НАЙДЕНА в БД!');
-          print('   💡 Нужно либо создать её вручную, либо обновить маппинг');
+          if (kDebugMode)
+            print(
+                '   ⚠️ ПРОБЛЕМА: Категория ID $categoryId из маппинга НЕ НАЙДЕНА в БД!');
+          if (kDebugMode)
+            print('   💡 Нужно либо создать её вручную, либо обновить маппинг');
         }
       } catch (e) {
-        print('   ⚠️ Ошибка проверки категории ID $categoryId: $e');
+        if (kDebugMode)
+          print('   ⚠️ Ошибка проверки категории ID $categoryId: $e');
       }
     }
 
-    print(
-        '📊 ИТОГО: Проверено: ${targetCategoryIds.length}, Существует: $skipped, Отсутствует: ${targetCategoryIds.length - skipped}');
+    if (kDebugMode)
+      print(
+          '📊 ИТОГО: Проверено: ${targetCategoryIds.length}, Существует: $skipped, Отсутствует: ${targetCategoryIds.length - skipped}');
 
     // ✅ Не создаём никаких новых категорий - только используем существующие!
     return 0;
@@ -1146,7 +1066,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     bool useMappings = true, // ← ДОБАВЬ ЭТИ
     Map<String, Map<String, dynamic>>? mappings, // ← ТРИ СТРОКИ
   }) async {
-    print('\n🔗 Обогащение товаров категориями с маппингом...');
+    if (kDebugMode) print('\n🔗 Обогащение товаров категориями с маппингом...');
 
     final enriched = <Map<String, dynamic>>[];
     int mappedCount = 0;
@@ -1162,11 +1082,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
       int? categoryId;
       // ДОБАВЬ ЭТИ СТРОКИ:
       if (excelCategory == '- Пирожные, десерты, пончики') {
-        print('🧪 ТЕСТ для "- Пирожные, десерты, пончики":');
-        print('   useMappings = $useMappings');
-        print('   mappings != null = ${mappings != null}');
-        print('   mappings.length = ${mappings?.length}');
-        print('   excelCategory = "$excelCategory"');
+        if (kDebugMode) print('🧪 ТЕСТ для "- Пирожные, десерты, пончики":');
+        if (kDebugMode) print('   useMappings = $useMappings');
+        if (kDebugMode) print('   mappings != null = ${mappings != null}');
+        if (kDebugMode) print('   mappings.length = ${mappings?.length}');
+        if (kDebugMode) print('   excelCategory = "$excelCategory"');
       }
 
       // 1. Сначала пытаемся использовать маппинг
@@ -1182,8 +1102,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
           categoryId = mapping['categoryId'] as int?;
           saleType = mapping['saleType'] as String?;
           mappedCount++;
-          print(
-              '   ✅ Маппинг: "$excelCategory" → категория #$categoryId, saleType=$saleType');
+          if (kDebugMode)
+            print(
+                '   ✅ Маппинг: "$excelCategory" → категория #$categoryId, saleType=$saleType');
         }
       }
 
@@ -1210,7 +1131,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       if (categoryId == null) {
         unmappedCount++;
         if (excelCategory != null) {
-          print('   ⚠️ НЕ СМАППИЛОСЬ: "$excelCategory"');
+          if (kDebugMode) print('   ⚠️ НЕ СМАППИЛОСЬ: "$excelCategory"');
         }
       }
 
@@ -1233,9 +1154,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       });
     }
 
-    print('   ✅ Смаппировано: $mappedCount');
-    print('   🎯 Точное совпадение: $exactMatchCount');
-    print('   ⚠️ Без категории: $unmappedCount');
+    if (kDebugMode) print('   ✅ Смаппировано: $mappedCount');
+    if (kDebugMode) print('   🎯 Точное совпадение: $exactMatchCount');
+    if (kDebugMode) print('   ⚠️ Без категории: $unmappedCount');
 
     return enriched;
   }
@@ -1371,12 +1292,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
     // Если пользователь подтвердил удаление
     if (confirmed == true) {
       try {
-        print('Начинаем удаление товара ID: ${product['id']}');
+        if (kDebugMode) print('Начинаем удаление товара ID: ${product['id']}');
 
         // Вызываем API для удаления
         await _apiService.deleteProduct(product['id']);
 
-        print('Товар успешно удален с сервера');
+        if (kDebugMode) print('Товар успешно удален с сервера');
 
         // Обновляем список товаров
         await _loadExistingProducts();
@@ -1392,7 +1313,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           );
         }
       } catch (e) {
-        print('Ошибка удаления товара: $e');
+        if (kDebugMode) print('Ошибка удаления товара: $e');
 
         // Показываем ошибку пользователю
         if (mounted) {
@@ -1533,14 +1454,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
 
     try {
-      print('Начинаем удаление ВСЕХ товаров');
+      if (kDebugMode) print('Начинаем удаление ВСЕХ товаров');
 
       final response = await _apiService.deleteAllProducts();
 
       // Закрываем индикатор загрузки
       Navigator.pop(context);
 
-      print('Результат: ${response}');
+      if (kDebugMode) print('Результат: ${response}');
 
       if (response['success']) {
         final deletedCount = response['deleted'] ?? 0;
@@ -1622,7 +1543,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // Закрываем индикатор загрузки
       Navigator.pop(context);
 
-      print('Ошибка удаления всех товаров: $e');
+      if (kDebugMode) print('Ошибка удаления всех товаров: $e');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1900,13 +1821,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         ),
                         onSubmitted: _searchAndScrollToProduct,
                         onChanged: (value) {
-                          setState(() {}); // Для обновления кнопки очистки
-                          // Поиск в реальном времени при наборе
-                          if (value.length >= 3) {
-                            _searchAndScrollToProduct(value);
-                          } else if (value.isEmpty) {
-                            _searchAndScrollToProduct('');
-                          }
+                          // Отменяем предыдущий таймер
+                          _searchDebounce?.cancel();
+
+                          // Запускаем новый с задержкой 300мс
+                          _searchDebounce =
+                              Timer(Duration(milliseconds: 300), () {
+                            if (value.length >= 3) {
+                              _searchAndScrollToProduct(value);
+                            } else if (value.isEmpty) {
+                              setState(() => _highlightedIndex = null);
+                            }
+                          });
                         },
                       ),
                     ),
@@ -1928,238 +1854,34 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 itemCount: _parsedItems.length,
                                 itemBuilder: (context, index) {
                                   final item = _parsedItems[index];
-
-                                  // ✅ ДОБАВИТЬ: Определяем подсветку
-                                  final isHighlighted =
-                                      _highlightedIndex == index;
-
-                                  return Card(
-                                    margin: EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    color: isHighlighted
-                                        ? Colors.amber[
-                                            100] // ✅ Жёлтая подсветка для найденного
-                                        : _selectedIndices.contains(index)
-                                            ? Colors.blue[
-                                                50] // Голубая для выбранного
-                                            : null, // Белая для обычного
-                                    child: ListTile(
-                                      leading: Checkbox(
-                                        // ← ДОБАВЬ весь этот блок
-                                        value: _selectedIndices.contains(index),
-                                        onChanged: (value) {
-                                          setState(() {
-                                            if (value == true) {
-                                              _selectedIndices.add(index);
-                                            } else {
-                                              _selectedIndices.remove(index);
-                                            }
-                                          });
-                                        },
-                                      ),
-                                      title: Text(item['name'] ?? ''),
-                                      subtitle: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.attach_money,
-                                                size: 14,
-                                                color: Colors.grey[600],
-                                              ),
-                                              Text(
-                                                '${item['price']} ₽ / ${item['unit']}',
-                                              ),
-                                              // ✨ НОВОЕ: Показываем остаток если есть
-                                              if (item['maxQuantity'] !=
-                                                  null) ...[
-                                                SizedBox(width: 12),
-                                                Icon(
-                                                  Icons.inventory_2,
-                                                  size: 14,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                Text(
-                                                  '${item['maxQuantity']}',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                          SizedBox(height: 4),
-                                          // ✨ НОВОЕ: Категория из Excel
-                                          if (item['originalCategory'] != null)
-                                            Text(
-                                              'Excel: ${item['originalCategory']}',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.blue[600],
-                                              ),
-                                            ),
-                                          // Предложенная категория из БД
-                                          Container(
-                                            padding: EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color:
-                                                  item['suggestedCategoryId'] !=
-                                                          null
-                                                      ? Colors.green[100]
-                                                      : Colors.orange[100],
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                4,
-                                              ),
-                                            ),
-                                            child: Text(
-                                              'БД: ${item['suggestedCategoryName'] ?? 'Не определена'}',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color:
-                                                    item['suggestedCategoryId'] !=
-                                                            null
-                                                        ? Colors.green[700]
-                                                        : Colors.orange[700],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      trailing: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
-                                        children: [
-                                          // Чекбокс типа продажи (ещё компактнее)
-                                          InkWell(
-                                            onTap: () {
-                                              setState(() {
-                                                final currentSaleType =
-                                                    item['saleType'] ??
-                                                        'поштучно';
-                                                item['saleType'] =
-                                                    currentSaleType ==
-                                                            'поштучно'
-                                                        ? 'только уп'
-                                                        : 'поштучно';
-                                              });
-                                            },
-                                            child: Container(
-                                              padding: EdgeInsets.symmetric(
-                                                  horizontal: 4, vertical: 1),
-                                              decoration: BoxDecoration(
-                                                color: (item['saleType'] ??
-                                                            'поштучно') ==
-                                                        'поштучно'
-                                                    ? Colors.blue[50]
-                                                    : Colors.orange[50],
-                                                borderRadius:
-                                                    BorderRadius.circular(3),
-                                                border: Border.all(
-                                                  color: (item['saleType'] ??
-                                                              'поштучно') ==
-                                                          'поштучно'
-                                                      ? Colors.blue[300]!
-                                                      : Colors.orange[300]!,
-                                                  width: 1,
-                                                ),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    (item['saleType'] ??
-                                                                'поштучно') ==
-                                                            'поштучно'
-                                                        ? Icons.check_box
-                                                        : Icons
-                                                            .check_box_outline_blank,
-                                                    size: 12,
-                                                    color: (item['saleType'] ??
-                                                                'поштучно') ==
-                                                            'поштучно'
-                                                        ? Colors.blue[700]
-                                                        : Colors.orange[700],
-                                                  ),
-                                                  SizedBox(width: 2),
-                                                  Text(
-                                                    (item['saleType'] ??
-                                                                'поштучно') ==
-                                                            'поштучно'
-                                                        ? 'Поштучно'
-                                                        : 'Только уп',
-                                                    style: TextStyle(
-                                                      fontSize: 9,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: (item['saleType'] ??
-                                                                  'поштучно') ==
-                                                              'поштучно'
-                                                          ? Colors.blue[700]
-                                                          : Colors.orange[700],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                          // Кнопки действий (без отступа сверху)
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                padding: EdgeInsets.all(2),
-                                                constraints: BoxConstraints(
-                                                    minWidth: 28,
-                                                    minHeight: 28),
-                                                icon:
-                                                    Icon(Icons.edit, size: 16),
-                                                onPressed: () =>
-                                                    _editItem(index),
-                                                tooltip: 'Редактировать',
-                                              ),
-                                              IconButton(
-                                                padding: EdgeInsets.all(2),
-                                                constraints: BoxConstraints(
-                                                    minWidth: 28,
-                                                    minHeight: 28),
-                                                icon: Icon(
-                                                  Icons.delete_outline,
-                                                  color: Colors.red[400],
-                                                  size: 16,
-                                                ),
-                                                onPressed: () =>
-                                                    _removeFromParsedList(
-                                                        index),
-                                                tooltip: 'Убрать из списка',
-                                              ),
-                                              IconButton(
-                                                padding: EdgeInsets.all(2),
-                                                constraints: BoxConstraints(
-                                                    minWidth: 28,
-                                                    minHeight: 28),
-                                                icon: Icon(
-                                                  Icons.add_circle,
-                                                  color: Colors.green,
-                                                  size: 16,
-                                                ),
-                                                onPressed: () =>
-                                                    _addToDatabase(item),
-                                                tooltip: 'Добавить в базу',
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                                  return _ParsedProductTile(
+                                    item: item,
+                                    index: index,
+                                    isSelected:
+                                        _selectedIndices.contains(index),
+                                    isHighlighted: _highlightedIndex == index,
+                                    onToggleSelect: () {
+                                      setState(() {
+                                        if (_selectedIndices.contains(index)) {
+                                          _selectedIndices.remove(index);
+                                        } else {
+                                          _selectedIndices.add(index);
+                                        }
+                                      });
+                                    },
+                                    onEdit: () => _editItem(index),
+                                    onRemove: () =>
+                                        _removeFromParsedList(index),
+                                    onAdd: () => _addToDatabase(item),
+                                    onToggleSaleType: () {
+                                      setState(() {
+                                        item['saleType'] =
+                                            (item['saleType'] ?? 'поштучно') ==
+                                                    'поштучно'
+                                                ? 'только уп'
+                                                : 'поштучно';
+                                      });
+                                    },
                                   );
                                 },
                               ),
@@ -2394,6 +2116,170 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ParsedProductTile extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final int index;
+  final bool isSelected;
+  final bool isHighlighted;
+  final VoidCallback onToggleSelect;
+  final VoidCallback onEdit;
+  final VoidCallback onRemove;
+  final VoidCallback onAdd;
+  final VoidCallback onToggleSaleType;
+
+  const _ParsedProductTile({
+    required this.item,
+    required this.index,
+    required this.isSelected,
+    required this.isHighlighted,
+    required this.onToggleSelect,
+    required this.onEdit,
+    required this.onRemove,
+    required this.onAdd,
+    required this.onToggleSaleType,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final saleType = item['saleType'] ?? 'поштучно';
+    final isPoshtuchno = saleType == 'поштучно';
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      color: isHighlighted
+          ? Colors.amber[100]
+          : isSelected
+              ? Colors.blue[50]
+              : null,
+      child: ListTile(
+        leading: Checkbox(
+          value: isSelected,
+          onChanged: (_) => onToggleSelect(),
+        ),
+        title: Text(item['name'] ?? ''),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.attach_money, size: 14, color: Colors.grey[600]),
+                Text('${item['price']} ₽ / ${item['unit']}'),
+                if (item['maxQuantity'] != null) ...[
+                  const SizedBox(width: 12),
+                  Icon(Icons.inventory_2, size: 14, color: Colors.grey[600]),
+                  Text('${item['maxQuantity']}',
+                      style: const TextStyle(fontSize: 12)),
+                ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            if (item['originalCategory'] != null)
+              Text(
+                'Excel: ${item['originalCategory']}',
+                style: TextStyle(fontSize: 11, color: Colors.blue[600]),
+              ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: item['suggestedCategoryId'] != null
+                    ? Colors.green[100]
+                    : Colors.orange[100],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'БД: ${item['suggestedCategoryName'] ?? 'Не определена'}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: item['suggestedCategoryId'] != null
+                      ? Colors.green[700]
+                      : Colors.orange[700],
+                ),
+              ),
+            ),
+          ],
+        ),
+        trailing: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            InkWell(
+              onTap: onToggleSaleType,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isPoshtuchno ? Colors.blue[50] : Colors.orange[50],
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(
+                    color:
+                        isPoshtuchno ? Colors.blue[300]! : Colors.orange[300]!,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isPoshtuchno
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      size: 12,
+                      color:
+                          isPoshtuchno ? Colors.blue[700] : Colors.orange[700],
+                    ),
+                    const SizedBox(width: 2),
+                    Text(
+                      isPoshtuchno ? 'Поштучно' : 'Только уп',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: isPoshtuchno
+                            ? Colors.blue[700]
+                            : Colors.orange[700],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  padding: const EdgeInsets.all(2),
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: const Icon(Icons.edit, size: 16),
+                  onPressed: onEdit,
+                  tooltip: 'Редактировать',
+                ),
+                IconButton(
+                  padding: const EdgeInsets.all(2),
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: Icon(Icons.delete_outline,
+                      color: Colors.red[400], size: 16),
+                  onPressed: onRemove,
+                  tooltip: 'Убрать из списка',
+                ),
+                IconButton(
+                  padding: const EdgeInsets.all(2),
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: const Icon(Icons.add_circle,
+                      color: Colors.green, size: 16),
+                  onPressed: onAdd,
+                  tooltip: 'Добавить в базу',
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
