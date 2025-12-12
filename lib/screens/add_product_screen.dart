@@ -600,24 +600,61 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     if (confirmed != true) return;
 
-    // ✨ Создаём категории ПЕРЕД добавлением товаров (как было)
+    // // ✨ Создаём категории ПЕРЕД добавлением товаров (как было)
+    // int categoriesCreated = 0;
+    // if (_excelCategories.isNotEmpty) {
+    //   print('🏷️ Создаём категории из Excel...');
+    //   categoriesCreated = await _autoCreateCategoriesFromExcel(
+    //     _excelCategories,
+    //   );
+    //   if (categoriesCreated > 0) {
+    //     await _loadCategories();
+    //     final reEnriched = await _enrichProductsWithCategories(
+    //       _parsedItems,
+    //       useMappings: _useMappings,
+    //       mappings: _categoryMappings,
+    //     );
+    //     setState(() {
+    //       _parsedItems = reEnriched;
+    //     });
+    //   }
+    // }
+
+    // ✅ ОТКЛЮЧЕНО: Автосоздание категорий из Excel
+// Теперь используем ТОЛЬКО существующие категории из маппинга
     int categoriesCreated = 0;
-    if (_excelCategories.isNotEmpty) {
-      print('🏷️ Создаём категории из Excel...');
-      categoriesCreated = await _autoCreateCategoriesFromExcel(
-        _excelCategories,
-      );
-      if (categoriesCreated > 0) {
-        await _loadCategories();
-        final reEnriched = await _enrichProductsWithCategories(
-          _parsedItems,
-          useMappings: _useMappings,
-          mappings: _categoryMappings,
-        );
-        setState(() {
-          _parsedItems = reEnriched;
-        });
+    print('📋 Проверка категорий из маппинга...');
+
+// Проверяем что все нужные категории из маппинга уже существуют в БД
+    final Set<int> requiredCategoryIds = {};
+    for (var mapping in _categoryMappings.values) {
+      final categoryId = mapping['categoryId'] as int?;
+      if (categoryId != null) {
+        requiredCategoryIds.add(categoryId);
       }
+    }
+
+    final missingCategories = requiredCategoryIds
+        .where((id) => !_categories.any((cat) => cat['id'] == id))
+        .toList();
+
+    if (missingCategories.isNotEmpty) {
+      print('⚠️ ВНИМАНИЕ: Отсутствуют категории с ID: $missingCategories');
+      print('💡 Добавьте эти категории вручную или обновите маппинг');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Внимание: Некоторые категории из маппинга не найдены в БД.\n'
+                'ID отсутствующих категорий: ${missingCategories.join(", ")}'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    } else {
+      print('✅ Все категории из маппинга присутствуют в БД');
     }
 
     // ✨ Показываем диалог прогресса
@@ -990,68 +1027,117 @@ class _AddProductScreenState extends State<AddProductScreen> {
     return uniqueCategories;
   }
 
-  /// ✨ НОВЫЙ: Автосоздание категорий из Excel
+  // /// ✨ НОВЫЙ: Автосоздание категорий из Excel
+  // Future<int> _autoCreateCategoriesFromExcel(
+  //     List<Map<String, dynamic>> excelCategories) async {
+  //   print('\n🏷️ Автосоздание категорий с умным маппингом...');
+
+  //   // ✨ Собираем оригинальные → упрощённые
+  //   final Map<String, String> categoryMapping = {};
+
+  //   for (var cat in excelCategories) {
+  //     if (cat['level'] == 1) {
+  //       final originalName = cat['name'] as String;
+
+  //       // ✨ Маппим в упрощённую категорию
+  //       final simplifiedName =
+  //           CategoryMapperService.mapToSimplifiedCategory(originalName);
+
+  //       if (simplifiedName != null) {
+  //         categoryMapping[simplifiedName] = originalName;
+  //         print('   📌 "$originalName" → "$simplifiedName"');
+  //       } else {
+  //         // Если не смаппилось - оставляем как есть
+  //         categoryMapping[originalName] = originalName;
+  //         print('   ⚠️ "$originalName" → (без изменений)');
+  //       }
+  //     }
+  //   }
+
+  //   // ✨ Получаем уникальные упрощённые названия
+  //   final uniqueSimplified = categoryMapping.keys.toSet();
+  //   print(
+  //       '   📊 Всего категорий в прайсе: ${excelCategories.where((c) => c['level'] == 1).length}');
+  //   print('   ✅ Уникальных упрощённых: ${uniqueSimplified.length}');
+
+  //   int created = 0;
+  //   int skipped = 0;
+
+  //   // ✨ Создаём упрощённые категории
+  //   for (var simplifiedName in uniqueSimplified) {
+  //     try {
+  //       final exists = _categories.any((c) =>
+  //           c['name'].toString().toLowerCase() == simplifiedName.toLowerCase());
+
+  //       if (exists) {
+  //         skipped++;
+  //         print('   ⏭️ Пропущена: "$simplifiedName"');
+  //         continue;
+  //       }
+
+  //       await _apiService.createCategory(
+  //         simplifiedName,
+  //         description: 'Автоматически из прайса',
+  //       );
+
+  //       created++;
+  //       print('   ✅ Создана: "$simplifiedName"');
+  //     } catch (e) {
+  //       print('   ⚠️ Ошибка создания "$simplifiedName": $e');
+  //     }
+  //   }
+
+  //   print('📊 ИТОГО: Создано: $created, Пропущено: $skipped');
+  //   return created;
+  // }
+
+  /// ✨ Автосоздание ТОЛЬКО целевых категорий из маппинга
   Future<int> _autoCreateCategoriesFromExcel(
       List<Map<String, dynamic>> excelCategories) async {
-    print('\n🏷️ Автосоздание категорий с умным маппингом...');
+    print('\n🏷️ Автосоздание целевых категорий из маппинга...');
 
-    // ✨ Собираем оригинальные → упрощённые
-    final Map<String, String> categoryMapping = {};
+    // ✅ Собираем ТОЛЬКО уникальные целевые категории из маппинга
+    final Set<int> targetCategoryIds = {};
 
-    for (var cat in excelCategories) {
-      if (cat['level'] == 1) {
-        final originalName = cat['name'] as String;
-
-        // ✨ Маппим в упрощённую категорию
-        final simplifiedName =
-            CategoryMapperService.mapToSimplifiedCategory(originalName);
-
-        if (simplifiedName != null) {
-          categoryMapping[simplifiedName] = originalName;
-          print('   📌 "$originalName" → "$simplifiedName"');
-        } else {
-          // Если не смаппилось - оставляем как есть
-          categoryMapping[originalName] = originalName;
-          print('   ⚠️ "$originalName" → (без изменений)');
-        }
+    for (var mapping in _categoryMappings.values) {
+      final categoryId = mapping['categoryId'] as int?;
+      if (categoryId != null) {
+        targetCategoryIds.add(categoryId);
       }
     }
 
-    // ✨ Получаем уникальные упрощённые названия
-    final uniqueSimplified = categoryMapping.keys.toSet();
     print(
-        '   📊 Всего категорий в прайсе: ${excelCategories.where((c) => c['level'] == 1).length}');
-    print('   ✅ Уникальных упрощённых: ${uniqueSimplified.length}');
+        '   📊 Найдено ${targetCategoryIds.length} уникальных целевых категорий в маппинге');
 
     int created = 0;
     int skipped = 0;
 
-    // ✨ Создаём упрощённые категории
-    for (var simplifiedName in uniqueSimplified) {
+    // ✅ Проверяем какие из них уже есть в БД
+    for (var categoryId in targetCategoryIds) {
       try {
-        final exists = _categories.any((c) =>
-            c['name'].toString().toLowerCase() == simplifiedName.toLowerCase());
+        final exists = _categories.any((c) => c['id'] == categoryId);
 
         if (exists) {
           skipped++;
-          print('   ⏭️ Пропущена: "$simplifiedName"');
-          continue;
+          final existingCat =
+              _categories.firstWhere((c) => c['id'] == categoryId);
+          print('   ⏭️ Уже есть: ID $categoryId - "${existingCat['name']}"');
+        } else {
+          // Категория из маппинга отсутствует в БД - это ошибка!
+          print(
+              '   ⚠️ ПРОБЛЕМА: Категория ID $categoryId из маппинга НЕ НАЙДЕНА в БД!');
+          print('   💡 Нужно либо создать её вручную, либо обновить маппинг');
         }
-
-        await _apiService.createCategory(
-          simplifiedName,
-          description: 'Автоматически из прайса',
-        );
-
-        created++;
-        print('   ✅ Создана: "$simplifiedName"');
       } catch (e) {
-        print('   ⚠️ Ошибка создания "$simplifiedName": $e');
+        print('   ⚠️ Ошибка проверки категории ID $categoryId: $e');
       }
     }
 
-    print('📊 ИТОГО: Создано: $created, Пропущено: $skipped');
-    return created;
+    print(
+        '📊 ИТОГО: Проверено: ${targetCategoryIds.length}, Существует: $skipped, Отсутствует: ${targetCategoryIds.length - skipped}');
+
+    // ✅ Не создаём никаких новых категорий - только используем существующие!
+    return 0;
   }
 
   /// ✨ НОВЫЙ МЕТОД: Обогащение товаров категориями из БД
