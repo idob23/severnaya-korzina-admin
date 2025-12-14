@@ -10,6 +10,7 @@ import 'admin/batch_details_screen.dart';
 import 'admin/system_settings_screen.dart';
 import 'package:intl/intl.dart';
 import 'admin/maintenance_control_screen.dart';
+import 'dart:async';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -18,6 +19,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
+  Timer? _tokenRefreshTimer; // ← НОВОЕ
+  final AdminApiService _apiService = AdminApiService(); // ← НОВОЕ
 
   // Список экранов админки
   final List<Widget> _screens = [
@@ -66,6 +69,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
       label: 'Обслуживание',
     ),
   ];
+
+  // ← НОВОЕ: initState с запуском таймера
+  @override
+  void initState() {
+    super.initState();
+    _startTokenRefresh();
+  }
+
+  // ← НОВОЕ: dispose для остановки таймера
+  @override
+  void dispose() {
+    _tokenRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  // ← НОВОЕ: Автообновление токена каждые 30 минут
+  void _startTokenRefresh() {
+    // Сразу обновляем токен при запуске
+    _refreshToken();
+
+    // Затем каждые 30 минут
+    _tokenRefreshTimer = Timer.periodic(Duration(minutes: 30), (_) {
+      _refreshToken();
+    });
+  }
+
+  // ← НОВОЕ: Метод обновления токена
+  Future<void> _refreshToken() async {
+    try {
+      print('🔄 Автообновление токена админа...');
+      final success = await _apiService.refreshToken();
+      if (success) {
+        print('✅ Токен успешно обновлён');
+      } else {
+        print('⚠️ Не удалось обновить токен');
+      }
+    } catch (e) {
+      print('❌ Ошибка обновления токена: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

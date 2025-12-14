@@ -5,6 +5,7 @@ class ParsedProductTile extends StatelessWidget {
   final int index;
   final bool isSelected;
   final bool isHighlighted;
+  final bool isNew; // Новый товар (нет в базе данных)
   final VoidCallback onToggleSelect;
   final VoidCallback onEdit;
   final VoidCallback onRemove;
@@ -17,6 +18,7 @@ class ParsedProductTile extends StatelessWidget {
     required this.index,
     required this.isSelected,
     required this.isHighlighted,
+    this.isNew = false,
     required this.onToggleSelect,
     required this.onEdit,
     required this.onRemove,
@@ -33,15 +35,44 @@ class ParsedProductTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       color: isHighlighted
           ? Colors.amber[100]
-          : isSelected
-              ? Colors.blue[50]
-              : null,
+          : isNew
+              ? Colors.red[50]  // Новый товар — красноватый фон
+              : isSelected
+                  ? Colors.blue[50]
+                  : null,
+      shape: isNew
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Colors.red[300]!, width: 2),
+            )
+          : null,
       child: ListTile(
         leading: Checkbox(
           value: isSelected,
           onChanged: (_) => onToggleSelect(),
         ),
-        title: Text(item['name'] ?? ''),
+        title: Row(
+          children: [
+            if (isNew)
+              Container(
+                margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red[600],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'НОВЫЙ',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            Expanded(child: Text(item['name'] ?? '')),
+          ],
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

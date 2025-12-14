@@ -567,6 +567,27 @@ class AdminApiService {
     });
   }
 
+  /// Обновить токен
+  Future<bool> refreshToken() async {
+    try {
+      final response = await _makeRequest('POST', '/auth/admin-refresh');
+      if (response['success'] == true && response['token'] != null) {
+        setAuthToken(response['token']);
+
+        // Сохраняем новый токен
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('admin_token', response['token']);
+
+        print('🔄 Токен успешно обновлён');
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Ошибка обновления токена: $e');
+      return false;
+    }
+  }
+
   /// Получить информацию об API
   Future<Map<String, dynamic>> getApiInfo() async {
     try {

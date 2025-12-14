@@ -232,31 +232,51 @@ class ExcelParserService {
             final parsedInPackage = _parseInt(inPackage);
             final parsedPackagePrice = _parsePrice(packagePrice);
 
-            // Используем цену упаковки, если она есть
-            final finalPrice = parsedPackagePrice ?? price;
+            // 🎯 НОВОЕ: Проверяем товары с фиксированным весом куска
+            // Например: "СЫР Брест-Литовск (1шт~3,5кг)" с ценой за кг
+            final fixedWeight = _parseFixedWeight(name);
+            final isFixedWeightProduct = fixedWeight != null && _isWeightUnit(unit);
 
-            // Формируем единицу измерения
-            final finalUnit =
-                parsedPackagePrice != null && parsedInPackage != null
-                    ? 'уп ($parsedInPackage шт)'
-                    : (unit?.trim() ?? 'шт');
+            double calculatedPrice;
+            double calculatedBasePrice;
+            String calculatedUnit;
+
+            if (isFixedWeightProduct) {
+              // Товар с фиксированным весом: умножаем цену за кг на вес куска
+              // Пример: 735₽/кг × 8кг = 5880₽/шт (наценка применится позже)
+              // packagePrice здесь НЕ используем — это цена за коробку (15кг), не за 1 кусок
+              calculatedBasePrice = price * fixedWeight;
+              calculatedPrice = calculatedBasePrice;
+              calculatedUnit = 'шт (~${fixedWeight.toString().replaceAll('.', ',')}кг)';
+
+              print('   🧀 Товар с фикс. весом: "$name"');
+              print('      Цена за кг: $price₽ × $fixedWeight кг = ${calculatedBasePrice.toStringAsFixed(2)}₽/шт');
+            } else {
+              // Обычный товар: используем цену упаковки если есть
+              calculatedPrice = parsedPackagePrice ?? price;
+              calculatedBasePrice = price;
+              calculatedUnit = parsedPackagePrice != null && parsedInPackage != null
+                  ? 'уп ($parsedInPackage шт)'
+                  : (unit?.trim() ?? 'шт');
+            }
 
             final product = {
               'name': name.trim(),
-              'price': finalPrice,
-              'unit': finalUnit,
-              'basePrice': price, // ✅ ЭТА СТРОКА ЕСТЬ?
-              'baseUnit': unit?.trim(), // ✅ ЭТА СТРОКА ЕСТЬ?
-              'inPackage': parsedInPackage, // ✅ ЭТА СТРОКА ЕСТЬ?
+              'price': calculatedPrice,
+              'unit': calculatedUnit,
+              'basePrice': calculatedBasePrice,
+              'baseUnit': isFixedWeightProduct ? 'шт' : unit?.trim(),
+              'inPackage': isFixedWeightProduct ? null : parsedInPackage,
               'code': code?.trim(),
               'maxQuantity': _parseInt(stock),
-              'inPackage': parsedInPackage,
               'packagePrice': parsedPackagePrice,
               'category': currentCategory,
               'subcategory': currentSubcategory,
               'row': i + 1,
               'isNew': true,
               'isDuplicate': false,
+              'isFixedWeight': isFixedWeightProduct,  // Флаг для отладки
+              'fixedWeightKg': fixedWeight,           // Вес куска для отладки
             };
 
             products.add(product);
@@ -471,6 +491,59 @@ class ExcelParserService {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Распознаёт товары с фиксированным весом куска
+  /// Паттерны: (1шт~3,5кг), (1шт~3.5кг), (~3,5кг), (1шт ~ 3,5 кг), (1шт~800гр)
+  /// Возвращает вес в кг или null если не найден
+  static double? _parseFixedWeight(String name) {
+    // Паттерны для килограммов
+    final kgPatterns = [
+      RegExp(r'\(1\s*шт\s*~\s*(\d+[.,]\d+)\s*кг\)', caseSensitive: false),
+      RegExp(r'\(\s*~\s*(\d+[.,]\d+)\s*кг\)', caseSensitive: false),
+      RegExp(r'\(1\s*шт\s*~\s*(\d+)\s*кг\)', caseSensitive: false),
+      RegExp(r'\(\s*~\s*(\d+)\s*кг\)', caseSensitive: false),
+    ];
+
+    for (var pattern in kgPatterns) {
+      final match = pattern.firstMatch(name);
+      if (match != null) {
+        final weightStr = match.group(1)!.replaceAll(',', '.');
+        final weight = double.tryParse(weightStr);
+        if (weight != null && weight > 0) {
+          return weight;
+        }
+      }
+    }
+
+    // Паттерны для граммов (конвертируем в кг)
+    final grPatterns = [
+      RegExp(r'\(1\s*шт\s*~\s*(\d+)\s*гр?\)', caseSensitive: false),
+      RegExp(r'\(\s*~\s*(\d+)\s*гр?\)', caseSensitive: false),
+    ];
+
+    for (var pattern in grPatterns) {
+      final match = pattern.firstMatch(name);
+      if (match != null) {
+        final gramsStr = match.group(1)!;
+        final grams = int.tryParse(gramsStr);
+        if (grams != null && grams > 0) {
+          return grams / 1000.0; // Конвертируем граммы в кг
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /// Проверяет, является ли единица измерения весовой (кг)
+  static bool _isWeightUnit(String? unit) {
+    if (unit == null) return false;
+    final normalized = unit.toLowerCase().trim();
+    return normalized == 'кг' ||
+           normalized == 'кг.' ||
+           normalized == 'килограмм' ||
+           normalized.startsWith('кг');
   }
 
   /// Получает уникальные категории

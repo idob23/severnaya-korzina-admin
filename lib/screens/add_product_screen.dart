@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:severnaya_korzina_admin/services/excel_parser_service.dart';
-import 'dart:io';
 import 'dart:math';
 import 'dart:async';
 import '../services/admin_api_service.dart';
@@ -249,9 +248,1138 @@ class _AddProductScreenState extends State<AddProductScreen> {
         onCategoriesUpdated: () async {
           await _loadCategories(); // Ждем загрузки категорий
         },
+        // Новый callback для применения маппинга ко всем товарам
+        onMappingCreated: (supplierCategory, categoryId, saleType) async {
+          await _applyMappingToAllProducts(supplierCategory, categoryId, saleType);
+        },
       ),
     );
   }
+
+  /// Применяет маппинг ко всем товарам с такой же категорией из Excel
+  Future<void> _applyMappingToAllProducts(
+    String supplierCategory,
+    int categoryId,
+    String saleType,
+  ) async {
+    // Находим название категории
+    String? categoryName;
+    try {
+      final category = _categories.firstWhere((c) => c['id'] == categoryId);
+      categoryName = category['name'] as String?;
+    } catch (e) {
+      categoryName = null;
+    }
+
+    int updatedCount = 0;
+
+    setState(() {
+      for (int i = 0; i < _parsedItems.length; i++) {
+        final item = _parsedItems[i];
+        final itemCategory = item['originalCategory'] as String?;
+
+        // Если категория из Excel совпадает — применяем маппинг
+        if (itemCategory == supplierCategory) {
+          _parsedItems[i] = {
+            ...item,
+            'suggestedCategoryId': categoryId,
+            'suggestedCategoryName': categoryName,
+            'saleType': saleType,
+          };
+          updatedCount++;
+        }
+      }
+
+      // Обновляем локальный кэш маппингов
+      _categoryMappings[supplierCategory] = {
+        'categoryId': categoryId,
+        'saleType': saleType,
+      };
+    });
+
+    if (mounted && updatedCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '✅ Маппинг сохранён!\nОбновлено товаров: $updatedCount',
+          ),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+
+    if (kDebugMode) {
+      print('📝 Создан маппинг: "$supplierCategory" → категория #$categoryId ($categoryName)');
+      print('   Обновлено товаров: $updatedCount');
+    }
+  }
+
+  /// Возвращает количество уникальных немаппированных категорий
+  int _getUnmappedCategoriesCount() {
+    final unmappedCategories = <String>{};
+    for (var item in _parsedItems) {
+      if (item['suggestedCategoryId'] == null) {
+        final originalCat = item['originalCategory'] as String?;
+        if (originalCat != null && originalCat.isNotEmpty) {
+          unmappedCategories.add(originalCat);
+        }
+      }
+    }
+    return unmappedCategories.length;
+  }
+
+  /// Возвращает количество товаров без категории
+  int _getUnmappedProductsCount() {
+    return _parsedItems.where((item) => item['suggestedCategoryId'] == null).length;
+  }
+
+  /// Показывает диалог со списком немаппированных категорий
+  void _showUnmappedCategoriesDialog() {
+    // Собираем статистику по немаппированным категориям
+    final unmappedStats = <String, int>{};
+    for (var item in _parsedItems) {
+      if (item['suggestedCategoryId'] == null) {
+        final originalCat = item['originalCategory'] as String? ?? 'Без категории';
+        unmappedStats[originalCat] = (unmappedStats[originalCat] ?? 0) + 1;
+      }
+    }
+
+    // Сортируем по количеству товаров
+    final sortedCategories = unmappedStats.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.category_outlined, color: Colors.orange[700]),
+            SizedBox(width: 8),
+            Text('Немаппированные категории'),
+          ],
+        ),
+        content: SizedBox(
+          width: 400,
+          height: 400,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Нажмите на категорию, чтобы назначить её товарам',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              SizedBox(height: 12),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: sortedCategories.length,
+                  itemBuilder: (context, index) {
+                    final entry = sortedCategories[index];
+                    return Card(
+                      margin: EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.orange[100],
+                          child: Text(
+                            '${entry.value}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange[800],
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          entry.key,
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        subtitle: Text(
+                          '${entry.value} товаров',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                        trailing: Icon(Icons.edit, size: 18, color: Colors.blue),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showQuickMappingDialog(entry.key, entry.value);
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Закрыть'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Быстрый диалог назначения категории для всех товаров с определённой категорией из Excel
+  void _showQuickMappingDialog(String supplierCategory, int productCount) {
+    int? selectedCategoryId;
+    String selectedSaleType = 'поштучно';
+    bool saveMapping = true;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Назначить категорию'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Категория из прайса:',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '"$supplierCategory"',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Товаров: $productCount',
+                      style: TextStyle(fontSize: 12, color: Colors.blue[700]),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                decoration: InputDecoration(
+                  labelText: 'Выберите категорию',
+                  border: OutlineInputBorder(),
+                ),
+                items: _categories
+                    .map<DropdownMenuItem<int>>(
+                      (cat) => DropdownMenuItem<int>(
+                        value: cat['id'] as int,
+                        child: Text(cat['name'] as String),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedCategoryId = value;
+                  });
+                },
+              ),
+              SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: selectedSaleType,
+                decoration: InputDecoration(
+                  labelText: 'Тип продажи',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  DropdownMenuItem(value: 'поштучно', child: Text('Поштучно')),
+                  DropdownMenuItem(value: 'только уп', child: Text('Только упаковками')),
+                ],
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedSaleType = value ?? 'поштучно';
+                  });
+                },
+              ),
+              SizedBox(height: 12),
+              CheckboxListTile(
+                value: saveMapping,
+                onChanged: (value) {
+                  setDialogState(() {
+                    saveMapping = value ?? true;
+                  });
+                },
+                title: Text('Сохранить маппинг', style: TextStyle(fontSize: 13)),
+                subtitle: Text(
+                  'Запомнить для будущих загрузок',
+                  style: TextStyle(fontSize: 11),
+                ),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: selectedCategoryId == null
+                  ? null
+                  : () async {
+                      Navigator.pop(dialogContext);
+
+                      // Сохраняем маппинг если выбрано
+                      if (saveMapping) {
+                        try {
+                          await CategoryMappingService.createMapping(
+                            supplierCategory: supplierCategory,
+                            targetCategoryId: selectedCategoryId!,
+                          );
+                        } catch (e) {
+                          if (kDebugMode) print('Ошибка сохранения маппинга: $e');
+                        }
+                      }
+
+                      // Применяем ко всем товарам
+                      await _applyMappingToAllProducts(
+                        supplierCategory,
+                        selectedCategoryId!,
+                        selectedSaleType,
+                      );
+                    },
+              child: Text('Применить'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============== СРАВНЕНИЕ ПРАЙСА С БАЗОЙ ==============
+
+  /// Нормализует название для сравнения
+  /// Убирает лишние пробелы, приводит к нижнему регистру, заменяет запятые на точки
+  String _normalizeProductName(String name) {
+    return name
+        .toLowerCase()
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ') // множественные пробелы → один
+        .replaceAll(',', '.')            // запятые → точки
+        .replaceAll('ё', 'е');           // ё → е
+  }
+
+  /// Безопасно парсит значение в double (может быть String, num или null)
+  double _parseToDouble(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  /// Безопасно парсит значение в int (может быть String, num или null)
+  int? _parseToInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  /// Сравнивает загруженный прайс с товарами в базе
+  /// Возвращает статистику: новые, обновление цен, без изменений, отсутствующие в прайсе
+  Map<String, dynamic> _compareWithDatabase() {
+    final result = {
+      'newProducts': <Map<String, dynamic>>[],      // Новые товары (нет в базе)
+      'priceChanges': <Map<String, dynamic>>[],     // Изменение цены/остатков
+      'unchanged': <Map<String, dynamic>>[],        // Без изменений
+      'missingInPrice': <Map<String, dynamic>>[],   // Есть в базе, нет в прайсе
+    };
+
+    // Создаём индекс товаров в базе по нормализованному названию
+    final dbIndex = <String, Map<String, dynamic>>{};
+    final dbNamesUsed = <String>{};
+
+    for (var dbProduct in _existingProducts) {
+      final name = dbProduct['name'] as String? ?? '';
+      final normalizedName = _normalizeProductName(name);
+      if (normalizedName.isNotEmpty) {
+        dbIndex[normalizedName] = dbProduct;
+      }
+    }
+
+    // Убираем дубликаты из прайса — оставляем только уникальные товары
+    // (берём первый встреченный товар с таким названием)
+    final uniqueParsedItems = <String, Map<String, dynamic>>{};
+    for (var parsedItem in _parsedItems) {
+      final parsedName = parsedItem['name'] as String? ?? '';
+      final normalizedParsedName = _normalizeProductName(parsedName);
+      if (normalizedParsedName.isNotEmpty && !uniqueParsedItems.containsKey(normalizedParsedName)) {
+        uniqueParsedItems[normalizedParsedName] = parsedItem;
+      }
+    }
+
+    // Сравниваем каждый УНИКАЛЬНЫЙ товар из прайса
+    for (var entry in uniqueParsedItems.entries) {
+      final normalizedParsedName = entry.key;
+      final parsedItem = entry.value;
+
+      if (dbIndex.containsKey(normalizedParsedName)) {
+        // Товар найден в базе
+        final dbProduct = dbIndex[normalizedParsedName]!;
+        dbNamesUsed.add(normalizedParsedName);
+
+        // Безопасный парсинг цен (могут быть String или num)
+        final parsedPrice = _parseToDouble(parsedItem['price']);
+        final dbPrice = _parseToDouble(dbProduct['price']);
+        final parsedStock = _parseToInt(parsedItem['maxQuantity']);
+        final dbStock = _parseToInt(dbProduct['maxQuantity']);
+
+        // Получаем текущий тип продажи из базы
+        final dbSaleType = dbProduct['saleType'] as String? ?? 'поштучно';
+
+        // Проверяем изменения цены или остатков
+        final priceChanged = (parsedPrice - dbPrice).abs() > 0.01;
+        final stockChanged = parsedStock != null && parsedStock != dbStock;
+
+        if (priceChanged || stockChanged) {
+          (result['priceChanges'] as List).add({
+            'parsed': parsedItem,
+            'db': dbProduct,
+            'oldPrice': dbPrice,
+            'newPrice': parsedPrice,
+            'oldStock': dbStock,
+            'newStock': parsedStock,
+            'priceChanged': priceChanged,
+            'stockChanged': stockChanged,
+            'saleType': dbSaleType,  // Текущий тип продажи из базы
+          });
+        } else {
+          (result['unchanged'] as List).add({
+            'parsed': parsedItem,
+            'db': dbProduct,
+          });
+        }
+      } else {
+        // Товар не найден в базе — новый
+        (result['newProducts'] as List).add(parsedItem);
+      }
+    }
+
+    // Находим товары, которые есть в базе, но нет в прайсе
+    for (var dbProduct in _existingProducts) {
+      final name = dbProduct['name'] as String? ?? '';
+      final normalizedName = _normalizeProductName(name);
+      if (normalizedName.isNotEmpty && !dbNamesUsed.contains(normalizedName)) {
+        (result['missingInPrice'] as List).add(dbProduct);
+      }
+    }
+
+    return result;
+  }
+
+  /// Показывает диалог сравнения прайса с базой
+  void _showCompareWithDatabaseDialog() {
+    if (_parsedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Сначала загрузите прайс'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final comparison = _compareWithDatabase();
+    final newProducts = comparison['newProducts'] as List;
+    final priceChanges = comparison['priceChanges'] as List;
+    final unchanged = comparison['unchanged'] as List;
+    final missingInPrice = comparison['missingInPrice'] as List;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.compare_arrows, color: Colors.blue[700]),
+                SizedBox(width: 8),
+                Text('Сравнение с базой'),
+              ],
+            ),
+            content: SizedBox(
+              width: 500,
+              height: 500,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Статистика
+                    _buildComparisonStatCard(
+                      icon: Icons.fiber_new,
+                      color: Colors.green,
+                      title: 'Новые товары',
+                      count: newProducts.length,
+                      onAction: newProducts.isEmpty ? null : () {
+                        Navigator.pop(dialogContext);
+                        _showNewProductsList(newProducts);
+                      },
+                      actionLabel: 'Показать',
+                    ),
+                    SizedBox(height: 8),
+                    _buildComparisonStatCard(
+                      icon: Icons.price_change,
+                      color: Colors.orange,
+                      title: 'Изменение цен/остатков',
+                      count: priceChanges.length,
+                      onAction: priceChanges.isEmpty ? null : () {
+                        Navigator.pop(dialogContext);
+                        _showPriceChangesDialog(priceChanges);
+                      },
+                      actionLabel: 'Обновить',
+                    ),
+                    SizedBox(height: 8),
+                    _buildComparisonStatCard(
+                      icon: Icons.check_circle,
+                      color: Colors.grey,
+                      title: 'Без изменений',
+                      count: unchanged.length,
+                      onAction: null,
+                      actionLabel: '',
+                    ),
+                    SizedBox(height: 8),
+                    _buildComparisonStatCard(
+                      icon: Icons.warning_amber,
+                      color: Colors.red,
+                      title: 'Нет в новом прайсе',
+                      count: missingInPrice.length,
+                      onAction: missingInPrice.isEmpty ? null : () {
+                        Navigator.pop(dialogContext);
+                        _showMissingProductsDialog(missingInPrice);
+                      },
+                      actionLabel: 'Показать',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('Закрыть'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildComparisonStatCard({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required int count,
+    required VoidCallback? onAction,
+    required String actionLabel,
+  }) {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: color.withOpacity(0.2),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontWeight: FontWeight.w500)),
+                  Text('$count товаров', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                ],
+              ),
+            ),
+            if (onAction != null)
+              ElevatedButton(
+                onPressed: onAction,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                child: Text(actionLabel, style: TextStyle(fontSize: 12)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Показывает список новых товаров с чекбоксами для выбора
+  void _showNewProductsList(List newProducts) {
+    final selectedProducts = List<bool>.filled(newProducts.length, true);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.fiber_new, color: Colors.green),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Новые товары (${newProducts.length})',
+                  style: TextStyle(fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            height: 450,
+            child: Column(
+              children: [
+                // Кнопки выбора всех/снять все
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          for (int i = 0; i < selectedProducts.length; i++) {
+                            selectedProducts[i] = true;
+                          }
+                        });
+                      },
+                      child: Text('Выбрать все'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          for (int i = 0; i < selectedProducts.length; i++) {
+                            selectedProducts[i] = false;
+                          }
+                        });
+                      },
+                      child: Text('Снять все'),
+                    ),
+                    Spacer(),
+                    Text(
+                      'Выбрано: ${selectedProducts.where((s) => s).length}',
+                      style: TextStyle(fontSize: 12, color: Colors.green[700]),
+                    ),
+                  ],
+                ),
+                Divider(),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: newProducts.length,
+                    itemBuilder: (context, index) {
+                      final product = newProducts[index];
+                      return CheckboxListTile(
+                        value: selectedProducts[index],
+                        onChanged: (value) {
+                          setDialogState(() {
+                            selectedProducts[index] = value ?? false;
+                          });
+                        },
+                        dense: true,
+                        title: Text(
+                          product['name'] ?? '',
+                          style: TextStyle(fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${_parseToDouble(product['price']).toStringAsFixed(0)} ₽ • ${product['category'] ?? 'Без категории'}',
+                          style: TextStyle(fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Закрыть'),
+            ),
+            ElevatedButton(
+              onPressed: selectedProducts.where((s) => s).isEmpty
+                  ? null
+                  : () {
+                      Navigator.pop(dialogContext);
+                      // Выбираем только отмеченные новые товары
+                      final selectedNewProducts = <Map<String, dynamic>>[];
+                      for (int i = 0; i < newProducts.length; i++) {
+                        if (selectedProducts[i]) {
+                          selectedNewProducts.add(newProducts[i] as Map<String, dynamic>);
+                        }
+                      }
+                      _selectOnlyNewProducts(selectedNewProducts);
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: Text('Выбрать для добавления (${selectedProducts.where((s) => s).length})'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Выбирает только новые товары (которых нет в базе)
+  void _selectOnlyNewProducts(List newProducts) {
+    final newNames = newProducts.map((p) => _normalizeProductName(p['name'] ?? '')).toSet();
+
+    setState(() {
+      _selectedIndices.clear();
+      for (int i = 0; i < _parsedItems.length; i++) {
+        final name = _normalizeProductName(_parsedItems[i]['name'] ?? '');
+        if (newNames.contains(name)) {
+          _selectedIndices.add(i);
+        }
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Выбрано ${_selectedIndices.length} новых товаров'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  /// Показывает диалог с изменениями цен
+  void _showPriceChangesDialog(List priceChanges) {
+    final selectedChanges = List<bool>.filled(priceChanges.length, true);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.price_change, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Обновление цен (${priceChanges.length})'),
+            ],
+          ),
+          content: SizedBox(
+            width: 550,
+            height: 450,
+            child: Column(
+              children: [
+                // Кнопки выбора всех/снять все
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          for (int i = 0; i < selectedChanges.length; i++) {
+                            selectedChanges[i] = true;
+                          }
+                        });
+                      },
+                      child: Text('Выбрать все'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          for (int i = 0; i < selectedChanges.length; i++) {
+                            selectedChanges[i] = false;
+                          }
+                        });
+                      },
+                      child: Text('Снять все'),
+                    ),
+                    Spacer(),
+                    Text(
+                      'Выбрано: ${selectedChanges.where((s) => s).length}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+                Divider(),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: priceChanges.length,
+                    itemBuilder: (context, index) {
+                      final change = priceChanges[index];
+                      final oldPrice = change['oldPrice'] as double;
+                      final newPrice = change['newPrice'] as double;
+                      final priceDiff = newPrice - oldPrice;
+                      final priceDiffPercent = oldPrice > 0 ? (priceDiff / oldPrice * 100) : 0;
+                      final priceChanged = change['priceChanged'] as bool;
+                      final stockChanged = change['stockChanged'] as bool;
+
+                      return Card(
+                        margin: EdgeInsets.symmetric(vertical: 2),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          child: Row(
+                            children: [
+                              // Чекбокс выбора
+                              Checkbox(
+                                value: selectedChanges[index],
+                                onChanged: (value) {
+                                  setDialogState(() {
+                                    selectedChanges[index] = value ?? false;
+                                  });
+                                },
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              // Название и изменения
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      change['parsed']['name'] ?? '',
+                                      style: TextStyle(fontSize: 12),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Row(
+                                      children: [
+                                        if (priceChanged) ...[
+                                          Text(
+                                            '${oldPrice.toStringAsFixed(0)}₽ → ${newPrice.toStringAsFixed(0)}₽',
+                                            style: TextStyle(fontSize: 10),
+                                          ),
+                                          SizedBox(width: 4),
+                                          Container(
+                                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: priceDiff > 0 ? Colors.red[100] : Colors.green[100],
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              '${priceDiff > 0 ? '+' : ''}${priceDiffPercent.toStringAsFixed(1)}%',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                color: priceDiff > 0 ? Colors.red[800] : Colors.green[800],
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        if (priceChanged && stockChanged)
+                                          SizedBox(width: 8),
+                                        if (stockChanged)
+                                          Text(
+                                            'Ост: ${change['oldStock'] ?? '?'} → ${change['newStock'] ?? '?'}',
+                                            style: TextStyle(fontSize: 10, color: Colors.blue[700]),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: selectedChanges.where((s) => s).isEmpty
+                  ? null
+                  : () async {
+                      Navigator.pop(dialogContext);
+                      await _applyPriceChanges(priceChanges, selectedChanges);
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+              child: Text('Обновить выбранные'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Применяет выбранные изменения цен
+  Future<void> _applyPriceChanges(List priceChanges, List<bool> selectedChanges) async {
+    int updatedCount = 0;
+    int errorCount = 0;
+
+    // Показываем индикатор загрузки
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Обновление товаров...'),
+          ],
+        ),
+      ),
+    );
+
+    for (int i = 0; i < priceChanges.length; i++) {
+      if (!selectedChanges[i]) continue;
+
+      final change = priceChanges[i];
+      final dbProduct = change['db'] as Map<String, dynamic>;
+      final parsedProduct = change['parsed'] as Map<String, dynamic>;
+      final productId = dbProduct['id'] as int?;
+
+      if (productId == null) continue;
+
+      try {
+        // Используем существующий метод updateProduct
+        await _apiService.updateProduct(productId, {
+          'price': parsedProduct['price'],
+          'maxQuantity': parsedProduct['maxQuantity'] ?? dbProduct['maxQuantity'],
+        });
+        updatedCount++;
+      } catch (e) {
+        errorCount++;
+        if (kDebugMode) print('Ошибка обновления товара $productId: $e');
+      }
+    }
+
+    // Закрываем индикатор
+    if (mounted) Navigator.pop(context);
+
+    // Перезагружаем товары
+    await _loadExistingProducts();
+
+    // Показываем результат
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            errorCount > 0
+                ? '✅ Обновлено: $updatedCount, ❌ Ошибок: $errorCount'
+                : '✅ Обновлено товаров: $updatedCount',
+          ),
+          backgroundColor: errorCount > 0 ? Colors.orange : Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  /// Показывает диалог с товарами, которых нет в новом прайсе
+  void _showMissingProductsDialog(List missingProducts) {
+    final selectedForDelete = List<bool>.filled(missingProducts.length, false);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.red),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Нет в новом прайсе (${missingProducts.length})',
+                  style: TextStyle(fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            height: 450,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Эти товары есть в базе, но отсутствуют в загруженном прайсе. '
+                    'Возможно, их сняли с продажи.',
+                    style: TextStyle(fontSize: 12, color: Colors.orange[900]),
+                  ),
+                ),
+                SizedBox(height: 8),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          for (int i = 0; i < selectedForDelete.length; i++) {
+                            selectedForDelete[i] = true;
+                          }
+                        });
+                      },
+                      child: Text('Выбрать все'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          for (int i = 0; i < selectedForDelete.length; i++) {
+                            selectedForDelete[i] = false;
+                          }
+                        });
+                      },
+                      child: Text('Снять все'),
+                    ),
+                    Spacer(),
+                    Text(
+                      'Для удаления: ${selectedForDelete.where((s) => s).length}',
+                      style: TextStyle(fontSize: 12, color: Colors.red[700]),
+                    ),
+                  ],
+                ),
+                Divider(),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: missingProducts.length,
+                    itemBuilder: (context, index) {
+                      final product = missingProducts[index];
+                      return CheckboxListTile(
+                        value: selectedForDelete[index],
+                        onChanged: (value) {
+                          setDialogState(() {
+                            selectedForDelete[index] = value ?? false;
+                          });
+                        },
+                        dense: true,
+                        title: Text(
+                          product['name'] ?? '',
+                          style: TextStyle(fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${_parseToDouble(product['price']).toStringAsFixed(0)} ₽ • ${product['category']?['name'] ?? 'Без категории'}',
+                          style: TextStyle(fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: selectedForDelete.where((s) => s).isEmpty
+                  ? null
+                  : () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: Text('Подтверждение удаления'),
+                          content: Text(
+                            'Вы уверены, что хотите удалить ${selectedForDelete.where((s) => s).length} товаров?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: Text('Отмена'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                              child: Text('Удалить'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirmed == true) {
+                        Navigator.pop(dialogContext);
+                        await _deleteMissingProducts(missingProducts, selectedForDelete);
+                      }
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: Text('Удалить выбранные'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Удаляет выбранные товары, которых нет в прайсе
+  Future<void> _deleteMissingProducts(List missingProducts, List<bool> selectedForDelete) async {
+    int deletedCount = 0;
+    int errorCount = 0;
+
+    // Показываем индикатор загрузки
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Удаление товаров...'),
+          ],
+        ),
+      ),
+    );
+
+    for (int i = 0; i < missingProducts.length; i++) {
+      if (!selectedForDelete[i]) continue;
+
+      final product = missingProducts[i];
+      final productId = product['id'] as int?;
+
+      if (productId == null) continue;
+
+      try {
+        // Используем существующий метод deleteProduct
+        await _apiService.deleteProduct(productId);
+        deletedCount++;
+      } catch (e) {
+        errorCount++;
+        if (kDebugMode) print('Ошибка удаления товара $productId: $e');
+      }
+    }
+
+    // Закрываем индикатор
+    if (mounted) Navigator.pop(context);
+
+    // Перезагружаем товары
+    await _loadExistingProducts();
+
+    // Показываем результат
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            errorCount > 0
+                ? '✅ Удалено: $deletedCount, ❌ Ошибок: $errorCount'
+                : '✅ Удалено товаров: $deletedCount',
+          ),
+          backgroundColor: errorCount > 0 ? Colors.orange : Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  // ============== КОНЕЦ: СРАВНЕНИЕ ПРАЙСА С БАЗОЙ ==============
 
   void _removeFromParsedList(int index) {
     showDialog(
@@ -853,8 +1981,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       final productsWithMarkup = products.map((product) {
-        // ✅ Если есть цена упаковки - используем её, иначе price
-        final packagePriceFromExcel = product['packagePrice'] as double?;
+        // ✅ Для весовых товаров (isFixedWeight) игнорируем packagePrice —
+        // там уже правильная цена за кусок (цена_за_кг × вес_куска)
+        final isFixedWeight = product['isFixedWeight'] == true;
+        final packagePriceFromExcel = isFixedWeight
+            ? null
+            : product['packagePrice'] as double?;
         final priceToMarkup =
             (packagePriceFromExcel ?? product['price']) as double;
 
@@ -1226,6 +2358,45 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
 
     return null;
+  }
+
+  /// Переключает тип продажи товара (поштучно / только уп)
+  Future<void> _toggleProductSaleType(Map<String, dynamic> product, bool isPackage) async {
+    final productId = product['id'] as int;
+    final newSaleType = isPackage ? 'только уп' : 'поштучно';
+
+    try {
+      await _apiService.updateProduct(productId, {
+        'saleType': newSaleType,
+      });
+
+      // Обновляем локально
+      setState(() {
+        final index = _existingProducts.indexWhere((p) => p['id'] == productId);
+        if (index != -1) {
+          _existingProducts[index]['saleType'] = newSaleType;
+        }
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Товар "${product['name']}" → ${isPackage ? "упаковками" : "поштучно"}'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _deleteProduct(Map<String, dynamic> product) async {
@@ -1793,6 +2964,38 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                   : Colors.blue[700],
                             ),
                           ),
+                          // Индикатор немаппированных категорий
+                          if (_getUnmappedCategoriesCount() > 0) ...[
+                            SizedBox(height: 8),
+                            InkWell(
+                              onTap: _showUnmappedCategoriesDialog,
+                              child: Container(
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange[100],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.orange[300]!),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.warning_amber, size: 18, color: Colors.orange[800]),
+                                    SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Без категории: ${_getUnmappedProductsCount()} товаров (${_getUnmappedCategoriesCount()} категорий)',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.orange[900],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    Icon(Icons.arrow_forward_ios, size: 14, color: Colors.orange[700]),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1857,12 +3060,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 addAutomaticKeepAlives: false,
                                 itemBuilder: (context, index) {
                                   final item = _parsedItems[index];
+                                  // Проверяем, есть ли товар в базе
+                                  final itemName = _normalizeProductName(item['name'] ?? '');
+                                  final isNewProduct = !_existingProducts.any((p) =>
+                                      _normalizeProductName(p['name'] ?? '') == itemName);
                                   return ParsedProductTile(
                                     item: item,
                                     index: index,
                                     isSelected:
                                         _selectedIndices.contains(index),
                                     isHighlighted: _highlightedIndex == index,
+                                    isNew: isNewProduct,
                                     onToggleSelect: () {
                                       setState(() {
                                         if (_selectedIndices.contains(index)) {
@@ -1912,6 +3120,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             ),
                             icon: Icon(Icons.add_shopping_cart),
                             label: Text('Добавить выбранные'),
+                          ),
+                          SizedBox(width: 8),
+                          // Новая кнопка "Сравнить с базой"
+                          ElevatedButton.icon(
+                            onPressed: _parsedItems.isEmpty
+                                ? null
+                                : _showCompareWithDatabaseDialog,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue[700],
+                              disabledBackgroundColor: Colors.grey[300],
+                            ),
+                            icon: Icon(Icons.compare_arrows),
+                            label: Text('Сравнить с базой'),
                           ),
                         ],
                       ),
@@ -2022,47 +3243,98 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               itemCount: _filteredProducts.length,
                               itemBuilder: (context, index) {
                                 final product = _filteredProducts[index];
+                                // DEBUG: посмотреть что приходит
+                                if (kDebugMode && index < 3) {
+                                  print('Product ${product['id']}: saleType = "${product['saleType']}"');
+                                }
+                                final isPackage = product['saleType'] == 'только уп';
                                 return Card(
                                   margin: EdgeInsets.symmetric(
                                     horizontal: 8,
                                     vertical: 4,
                                   ),
                                   color: Colors.green[50],
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: Colors.green[200],
-                                      child: Text(
-                                        '${product['id']}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    title: Text(product['name'] ?? ''),
-                                    subtitle: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 4),
+                                    child: Row(
                                       children: [
-                                        Text(
-                                          'Цена: ${product['price']} ₽ / ${product['unit'] ?? 'шт'}',
-                                        ),
-                                        if (product['category'] != null)
-                                          Text(
-                                            product['category']['name'],
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.green[700],
+                                        // ID товара
+                                        SizedBox(
+                                          width: 50,
+                                          child: CircleAvatar(
+                                            backgroundColor: Colors.green[200],
+                                            radius: 16,
+                                            child: Text(
+                                              '${product['id']}',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
                                           ),
+                                        ),
+                                        // Название и цена
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                product['name'] ?? '',
+                                                style: TextStyle(fontSize: 13),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                '${product['price']} ₽ / ${product['unit'] ?? 'шт'}',
+                                                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                              ),
+                                              if (product['category'] != null)
+                                                Text(
+                                                  product['category']['name'],
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.green[700],
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        // Бейдж типа продажи (кликабельный)
+                                        GestureDetector(
+                                          onTap: () => _toggleProductSaleType(product, !isPackage),
+                                          child: Container(
+                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: isPackage ? Colors.orange[100] : Colors.blue[100],
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: isPackage ? Colors.orange[300]! : Colors.blue[300]!,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              isPackage ? 'Только уп' : 'Поштучно',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: isPackage ? Colors.orange[800] : Colors.blue[800],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(width: 4),
+                                        // Кнопка удаления
+                                        IconButton(
+                                          icon: Icon(
+                                            Icons.delete,
+                                            color: Colors.red[400],
+                                            size: 20,
+                                          ),
+                                          onPressed: () => _deleteProduct(product),
+                                          padding: EdgeInsets.zero,
+                                          constraints: BoxConstraints(),
+                                        ),
+                                        SizedBox(width: 8),
                                       ],
-                                    ),
-                                    trailing: IconButton(
-                                      icon: Icon(
-                                        Icons.delete,
-                                        color: Colors.red[400],
-                                      ),
-                                      onPressed: () => _deleteProduct(product),
                                     ),
                                   ),
                                 );
