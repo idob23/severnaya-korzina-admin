@@ -11,6 +11,7 @@ import 'admin/system_settings_screen.dart';
 import 'package:intl/intl.dart';
 import 'admin/maintenance_control_screen.dart';
 import 'dart:async';
+import 'analytics_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -30,6 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _ProductsManagementScreen(),
     _BatchesManagementScreen(),
     _MoneyCollectionScreen(),
+    AnalyticsScreen(),
     SystemSettingsScreen(),
     MaintenanceControlScreen(),
   ];
@@ -59,6 +61,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     BottomNavigationBarItem(
       icon: Icon(Icons.attach_money),
       label: 'Сбор денег',
+    ),
+    // ✅ ДОБАВИТЬ:
+    BottomNavigationBarItem(
+      icon: Icon(Icons.analytics),
+      label: 'Аналитика',
     ),
     BottomNavigationBarItem(
       icon: Icon(Icons.settings),

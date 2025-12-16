@@ -665,6 +665,61 @@ class AdminApiService {
     }
   }
 
+  // ==========================================
+// МЕТОДЫ ДЛЯ АНАЛИТИКИ
+// ==========================================
+
+  /// Получить главный дашборд аналитики
+  Future<Map<String, dynamic>> getAnalyticsDashboard() async {
+    return await _makeRequest('GET', '/analytics/dashboard');
+  }
+
+  /// Получить тренды за период
+  Future<Map<String, dynamic>> getAnalyticsTrends({int days = 30}) async {
+    return await _makeRequest('GET', '/analytics/trends', queryParams: {
+      'days': days.toString(),
+    });
+  }
+
+  /// Получить топ товаров
+  Future<Map<String, dynamic>> getTopProducts({int limit = 20}) async {
+    return await _makeRequest('GET', '/analytics/top-products', queryParams: {
+      'limit': limit.toString(),
+    });
+  }
+
+  /// Получить топ категорий
+  Future<Map<String, dynamic>> getTopCategories() async {
+    return await _makeRequest('GET', '/analytics/top-categories');
+  }
+
+  /// Получить топ клиентов
+  Future<Map<String, dynamic>> getTopCustomers({int limit = 20}) async {
+    return await _makeRequest('GET', '/analytics/top-customers', queryParams: {
+      'limit': limit.toString(),
+    });
+  }
+
+  /// Получить статусы заказов
+  Future<Map<String, dynamic>> getOrderStatuses() async {
+    return await _makeRequest('GET', '/analytics/order-statuses');
+  }
+
+  /// Получить данные о retention
+  Future<Map<String, dynamic>> getRetention() async {
+    return await _makeRequest('GET', '/analytics/retention');
+  }
+
+  /// Получить данные об экономии
+  Future<Map<String, dynamic>> getSavings() async {
+    return await _makeRequest('GET', '/analytics/savings');
+  }
+
+  /// Экспортировать данные аналитики
+  Future<Map<String, dynamic>> exportAnalytics() async {
+    return await _makeRequest('GET', '/analytics/export');
+  }
+
   /// Загрузить картинку для категории
   Future<Map<String, dynamic>> uploadCategoryImage(
     int categoryId,
